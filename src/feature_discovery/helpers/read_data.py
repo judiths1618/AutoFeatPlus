@@ -22,13 +22,13 @@ def get_df_with_prefix(
     if use_polars:
         dataframe = pl.read_csv(str(DATA_FOLDER / node_id), encoding="utf8", quote_char='"')
         if target_column:
-            dataframe = dataframe.select(
-                pl.all().map_alias(
-                    lambda col_name: f"{node_label}.{col_name}" if col_name != target_column else col_name
-                )
-            )
+            columns = dataframe.columns
+            rename_dict = {col: f"{node_label}.{col}" if col != target_column else col for col in columns}
+            dataframe = dataframe.rename(rename_dict)
         else:
-            dataframe = dataframe.select(pl.all().map_alias(lambda col_name: f"{node_label}.{col_name}"))
+            columns = dataframe.columns
+            rename_dict = {col: f"{node_label}.{col}" for col in columns}
+            dataframe = dataframe.rename(rename_dict)
 
         dataframe = dataframe.to_pandas()
         if target_column:

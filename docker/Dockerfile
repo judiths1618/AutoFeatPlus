@@ -1,19 +1,23 @@
-FROM --platform=amd64 python:3.8-slim-buster
+FROM python:3.10-slim-bookworm
 
-# Install java for valentine
-RUN apt update && apt install -y default-jre htop build-essential
+# System deps
+RUN apt update && apt install -y default-jre htop build-essential && apt clean
 
+# Environment variables for Neo4j
 ENV NEO4J_HOST="neo4j://feature-discovery-neo4j:7687"
 ENV NEO4J_USER="neo4j"
-ENV NEO4J_PASSWORD="pass"
+ENV NEO4J_PASSWORD="password"
 ENV NEO4J_DATABASE="benchmark"
 
-COPY requirements.txt /requirements.txt
+# Set workdir
+WORKDIR /app
 
-RUN pip install -r /requirements.txt
+# Copy whole project
+COPY . .
 
-COPY src /src
-COPY pyproject.toml /pyproject.toml
+# Install Python dependencies
+RUN pip install --upgrade pip
+RUN pip install -r requirements.txt
 
-# Install python deps
+# Editable install (requires correct pyproject.toml + src/)
 RUN pip install -e .

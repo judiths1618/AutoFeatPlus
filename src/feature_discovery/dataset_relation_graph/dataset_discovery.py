@@ -7,6 +7,10 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from valentine import valentine_match
 from valentine.algorithms import Coma
+from valentine.algorithms import JaccardDistanceMatcher
+from valentine.algorithms import Cupid
+from valentine.algorithms import DistributionBased
+from valentine.algorithms import SimilarityFlooding  
 
 from feature_discovery.config import DATA_FOLDER, CONNECTIONS
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
@@ -16,6 +20,7 @@ def profile_valentine_all(valentine_threshold: float = 0.55):
     files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
     files = [f for f in files if CONNECTIONS not in f]
 
+    print(f"Found {len(files)} files to profile with Valentine.")
     profile_valentine_logic(files, valentine_threshold)
 
 
@@ -39,7 +44,19 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         print(f"Processing the match between:\n\t{a_table_path}\n\t{b_table_path}")
         df1 = pd.read_csv(tab1, encoding="utf8")
         df2 = pd.read_csv(tab2, encoding="utf8")
-        matches = valentine_match(df1, df2, Coma(strategy="COMA_OPT"))
+
+
+        # matches = valentine_match(df1, df2, Coma(strategy="COMA_OPT"))
+
+        # Instantiate matcher and run it
+        # matcher = Coma(use_instances = True, java_xmx = "10g") # use_instances=True enables instance-based matching
+        # matcher = Coma()  # COMA matcher
+        matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
+        # matcher = SimilarityFlooding()  # Similarity flooding matcher
+        # matcher = Cupid()  # Cupid matcher
+        # matcher = DistributionBased()  # Distribution-based matcher
+
+        matches = valentine_match(df1, df2, matcher)
 
         for item in matches.items():
             ((_, col_from), (_, col_to)), similarity = item
