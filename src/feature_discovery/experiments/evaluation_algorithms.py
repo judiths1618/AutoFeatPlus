@@ -16,8 +16,9 @@ hyper_parameters = [
     {"GBM": {}},
     {"XT": {}},
     {"XGB": {}},
-    # {'KNN': {}},
+    {'KNN': {}},
     # {'LR': {'penalty': 'L1'}},
+    
 ]
 
 
@@ -65,7 +66,8 @@ def run_auto_gluon(dataframe: pd.DataFrame, target_column: str, problem_type: st
 
     results = []
 
-    model_names = predictor.get_model_names()
+    model_names = predictor.leaderboard(silent=True)['model'].tolist()
+    print(f"Models trained: {model_names}")
     for model in model_names[:-1]:
         result = predictor.evaluate(data=X_test, model=model)
         accuracy = abs(result[score_type])

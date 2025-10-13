@@ -297,7 +297,7 @@ class AutoFeat:
         left_df: pd.DataFrame,
         right_df: pd.DataFrame,
         right_label: str,
-    ) -> Tuple[pd.DataFrame or None, str, list]:
+    ) -> Tuple[Optional[pd.DataFrame], str, list]:
         logging.debug("\tSTEP Join ... ")
         join_prop, from_table, to_table = join_key_properties
 

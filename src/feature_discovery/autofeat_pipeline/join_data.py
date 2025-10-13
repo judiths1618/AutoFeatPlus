@@ -36,15 +36,54 @@ def join_directly_connected(base_table_id: str):
     return partial_join
 
 
-def pl_outer_join(df1: pl.DataFrame, df2: pl.DataFrame, how, left_on, right_on):
-    new_names = [f"{x}_tmp" for x in [left_on, right_on]]
+# def pl_outer_join(df1: pl.DataFrame, df2: pl.DataFrame, how, left_on, right_on):
+#     new_names = [f"{x}_tmp" for x in [left_on, right_on]]
 
-    # replicate join columns with new names
-    df1 = df1.with_columns(col(left_on).alias(new_names[0]))
-    df2 = df2.with_columns(col(right_on).alias(new_names[1]))
+#     # replicate join columns with new names
+#     df1 = df1.with_columns(col(left_on).alias(new_names[0]))
+#     df2 = df2.with_columns(col(right_on).alias(new_names[1]))
 
-    # perform join and drop columns
-    return df1.join(df2, left_on=new_names[0], right_on=new_names[1], how=how).drop(new_names)
+#     # perform join and drop columns
+#     return df1.join(df2, left_on=new_names[0], right_on=new_names[1], how=how).drop(new_names)
+
+def pl_outer_join(
+    df1: pl.DataFrame,
+    df2: pl.DataFrame,
+    left_on: str,
+    right_on: str,
+    how: str = "left",
+) -> pl.DataFrame:
+    """
+    Perform a safe join on two Polars DataFrames with temporary aliasing,
+    avoiding column conflicts and missing-column crashes.
+    """
+    left_tmp = f"{left_on}_tmp"
+    right_tmp = f"{right_on}_tmp"
+
+    # Debug logging (optional)
+    print(f"[pl_outer_join] df1.columns: {df1.columns}")
+    print(f"[pl_outer_join] df2.columns: {df2.columns}")
+    print(f"[pl_outer_join] Join on: {left_on} == {right_on}")
+
+    # --- Check that join keys exist ---
+    if left_on not in df1.columns:
+        raise ValueError(f"[pl_outer_join] Column '{left_on}' not found in left_df.")
+    if right_on not in df2.columns:
+        raise ValueError(f"[pl_outer_join] Column '{right_on}' not found in right_df.")
+
+    # --- Create alias to avoid column name conflicts ---
+    df1 = df1.with_columns(pl.col(left_on).alias(left_tmp))
+    df2 = df2.with_columns(pl.col(right_on).alias(right_tmp))
+
+    # --- Perform join on temporary keys ---
+    df_joined = df1.join(df2, left_on=left_tmp, right_on=right_tmp, how=how)
+
+    # --- Drop temporary keys if they exist ---
+    drop_cols = [col for col in [left_tmp, right_tmp] if col in df_joined.columns]
+    df_joined = df_joined.drop(drop_cols)
+
+    return df_joined
+
 
 
 def join_and_save(
@@ -55,7 +94,7 @@ def join_and_save(
     join_path: Path,
     csv: bool = True,
     save_to_disk: bool = True,
-) -> pd.DataFrame or None:
+) -> pd.DataFrame or None: # type: ignore
     """
     Join two dataframes and save the result on disk.
 

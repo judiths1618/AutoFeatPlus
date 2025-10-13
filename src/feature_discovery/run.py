@@ -166,7 +166,11 @@ def get_results_tune_k(datasets: List[Dataset], results_filename: str):
         print(f"==== k = {k} ==== ")
         for dataset in datasets:
             print(f"\tDataset = {dataset.base_table_label} ==== ")
-            result_bfs = get_tfd_results(dataset, value_ratio=0.65, top_k=k)
+            result_bfs = get_tfd_results(
+                dataset, 
+                # algorithm='bfs',    # BFS algorithm for path discovery
+                value_ratio=0.65, 
+                top_k=k)
             all_results.extend(result_bfs)
         pd.DataFrame(all_results).to_csv(RESULTS_FOLDER / f"k_{k}_{results_filename}", index=False)
     pd.DataFrame(all_results).to_csv(RESULTS_FOLDER / results_filename, index=False)
