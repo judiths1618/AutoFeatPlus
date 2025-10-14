@@ -1,3 +1,4 @@
+import inspect
 import logging
 import math
 from typing import List
@@ -68,6 +69,24 @@ def _bin_count_ranking(
     return bins
 
 
+def _resolve_estimator(estimator_like, default_cls):
+    """Return an estimator instance based on the provided input."""
+
+    if estimator_like is None:
+        return default_cls()
+    if inspect.isclass(estimator_like):
+        return estimator_like()
+    return estimator_like
+
+
+def _select_columns(matrix, indices):
+    """Project a matrix onto the provided column indices for numpy or pandas inputs."""
+
+    if hasattr(matrix, "iloc"):
+        return matrix.iloc[:, indices]
+    return matrix[:, indices]
+
+
 def select_features(
         normalised_matrix: pd.DataFrame,
         y: pd.Series,
@@ -75,6 +94,7 @@ def select_features(
         eta=0.2,
         k=10,
         regression: bool = False,
+        regressor=None,
 ) -> List:
     """
     Algorithm 1 from "ARDA: Automatic Relational Data Augmentation for Machine Learning"
@@ -89,9 +109,9 @@ def select_features(
     """
 
     if regression:
-        estimator = RandomForestRegressor()
+        estimator = _resolve_estimator(regressor, RandomForestRegressor)
     else:
-        estimator = RandomForestClassifier()
+        estimator = _resolve_estimator(regressor, RandomForestClassifier)
 
     d = normalised_matrix.shape[1]
     logging.debug("\tARDA: Generate features")
@@ -102,6 +122,9 @@ def select_features(
     mask = np.zeros(X.shape[1], dtype=bool)
     mask[d:] = True  # We mark the columns that were generated
     counts = np.zeros(d)
+
+    if k == 0:
+        return np.array([], dtype=int)
 
     # Repeat process 'k' times, as in the algorithm
     logging.debug("\tARDA: Decide feature importance")
@@ -118,6 +141,8 @@ def wrapper_algo(
         eta=0.2,
         k=10,
         regression: bool = False,
+        estimator=None,
+        regressor=None,
 ) -> List:
     """
     Algorithm 3 from "ARDA: Automatic Relational Data Augmentation for Machine Learning"
@@ -136,10 +161,9 @@ def wrapper_algo(
             "Criterion/feature 'y' should have the same amount of rows as 'A'"
         )
 
-    if regression:
-        estimator = RandomForestRegressor()
-    else:
-        estimator = RandomForestClassifier()
+    scoring_estimator = _resolve_estimator(
+        estimator, RandomForestRegressor if regression else RandomForestClassifier
+    )
 
     last_accuracy = 0
     last_indices = []
@@ -150,19 +174,26 @@ def wrapper_algo(
         )
         logging.debug("\nARDA: Select features")
         indices = select_features(
-            X_train, y_train, tau=t, eta=eta, k=k, regression=regression
+            X_train,
+            y_train,
+            tau=t,
+            eta=eta,
+            k=k,
+            regression=regression,
+            regressor=regressor,
         )
 
         # If this happens, the thresholds might have been too strict
         if len(indices) == 0:
             return last_indices
 
-        if len(X_train.iloc[:, indices]) == 0:
+        projected_train = _select_columns(X_train, indices)
+        if len(projected_train) == 0:
             return last_indices
 
         logging.debug("ARDA: Train and score")
-        estimator.fit(X_train.iloc[:, indices], y_train)
-        accuracy = estimator.score(X_test.iloc[:, indices], y_test)
+        scoring_estimator.fit(projected_train, y_train)
+        accuracy = scoring_estimator.score(_select_columns(X_test, indices), y_test)
         if accuracy < last_accuracy:
             break
         else:
