@@ -1,5 +1,5 @@
-from dataclasses import dataclass
-from typing import Dict, Optional, List
+from dataclasses import dataclass, field
+from typing import Dict, List
 
 
 @dataclass
@@ -21,28 +21,21 @@ class Result:
     BASE = "BASE"
 
     algorithm: str
-    data_path: str = None
-    approach: str = None
-    data_label: str = None
-    join_time: Optional[float] = None
+    data_path: str = ""
+    approach: str = ""
+    data_label: str = ""
+    join_time: float = 0.0
     total_time: float = 0.0
-    feature_selection_time: Optional[float] = None
-    depth: Optional[int] = None
-    accuracy: Optional[float] = None
-    train_time: Optional[float] = None
-    feature_importance: Optional[Dict[str, float]] = None
-    join_path_features: List[str] = None
-    cutoff_threshold: Optional[float] = None
-    redundancy_threshold: Optional[float] = None
-    rank: Optional[int] = None
-    top_k: int = None
+    feature_selection_time: float = 0.0
+    depth: int = 0
+    accuracy: float = 0.0
+    train_time: float = 0.0
+    feature_importance: Dict[str, float] = field(default_factory=dict)
+    join_path_features: List[str] = field(default_factory=list)
+    cutoff_threshold: float = 0.0
+    redundancy_threshold: float = 0.0
+    rank: int = 0
+    top_k: int = 0
 
     def __post_init__(self):
-        if self.join_time is not None:
-            self.total_time += self.join_time
-
-        if self.train_time is not None:
-            self.total_time += self.train_time
-
-        if self.feature_selection_time is not None:
-            self.total_time += self.feature_selection_time
+        self.total_time += self.join_time + self.train_time + self.feature_selection_time
