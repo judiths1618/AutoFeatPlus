@@ -135,7 +135,8 @@ dmypy.json
 .idea
 */**/.DS_Store
 /env/*
-/data/*
+# /data/*
+/data/benchmark/*
 /data-split/*
 !/data/.keep
 /experiment_results/*

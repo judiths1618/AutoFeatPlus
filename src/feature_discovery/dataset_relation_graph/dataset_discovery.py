@@ -45,17 +45,18 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         df1 = pd.read_csv(tab1, encoding="utf8")
         df2 = pd.read_csv(tab2, encoding="utf8")
 
-
+        print(f"Table 1: {df1.shape}, Table 2: {df2.shape}")
         # matches = valentine_match(df1, df2, Coma(strategy="COMA_OPT"))
 
         # Instantiate matcher and run it
-        # matcher = Coma(use_instances = True, java_xmx = "10g") # use_instances=True enables instance-based matching
+        # matcher = Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
         # matcher = Coma()  # COMA matcher
-        matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
-        # matcher = SimilarityFlooding()  # Similarity flooding matcher
+        # matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
+        matcher = SimilarityFlooding()  # Similarity flooding matcher
         # matcher = Cupid()  # Cupid matcher
         # matcher = DistributionBased()  # Distribution-based matcher
 
+        # print(matcher)
         matches = valentine_match(df1, df2, matcher)
 
         for item in matches.items():
