@@ -2,10 +2,9 @@ import logging
 import tempfile
 import uuid
 from pathlib import Path
-from typing import List, Dict, Set, Tuple, Optional
+from typing import Dict, List, Optional, Set, Tuple
 
 import pandas as pd
-import polars as pl
 from autogluon.features.generators import AutoMLPipelineFeatureGenerator
 
 
@@ -18,6 +17,7 @@ from feature_discovery.graph_processing.neo4j_transactions import (
     get_relation_properties_node_name,
 )
 from feature_discovery.helpers.read_data import get_df_with_prefix
+from feature_discovery.helpers.optional_polars import POLARS_AVAILABLE, pl
 
 logging.getLogger().setLevel(logging.WARNING)
 
@@ -63,7 +63,13 @@ class AutoFeat:
         self.join_keys: Dict[str, list] = {}
         self.rel_red = RelevanceRedundancy(target_column, jmi=jmi, pearson=pearson)
         self.temp_dir = tempfile.TemporaryDirectory()
-        self.use_polars = use_polars
+        if use_polars and not POLARS_AVAILABLE:
+            logging.warning(
+                "Polars is not installed; defaulting to pandas for join operations. "
+                "Install the optional 'polars' dependency to re-enable the faster path."
+            )
+
+        self.use_polars = use_polars and POLARS_AVAILABLE
         self.partial_join = self.initialisation()
 
         # Ablation study parameters
