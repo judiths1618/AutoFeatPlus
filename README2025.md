@@ -71,6 +71,8 @@ The Docker image already contains all the necesarry for development.
 # 2. Data setup
 1. [Download](https://surfdrive.surf.nl/files/index.php/s/1t1MTW8s8cfTDwc) our experimental datasets and put them in [data/benchmark](data/benchmark).
 
+2. [Download](https://zenodo.org/records/6907619) we consider published 6G datasets and put them in [data/6g_testbed_dataset/EUR/](data/6g_testbed_dataset/EUR/)
+
 To ingest the data in the local development, it is necessary to follow the steps from [Neo4j Desktop setup](#neo4j-desktop-setup) beforehand.
 
 For Docker, Neo4j browser is available at [localhost:7474](localhost:7474). No user or password is required.
