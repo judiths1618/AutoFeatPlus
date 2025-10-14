@@ -71,7 +71,7 @@ The Docker image already contains all the necesarry for development.
 # 2. Data setup
 1. [Download](https://surfdrive.surf.nl/files/index.php/s/1t1MTW8s8cfTDwc) our experimental datasets and put them in [data/benchmark](data/benchmark).
 
-2. [Download](https://zenodo.org/records/6907619) we consider published 6G datasets and put them in [data/6g_testbed_dataset/EUR/](data/6g_testbed_dataset/EUR/)
+2. [Download](https://zenodo.org/records/6907619) we consider published 6G datasets and put them in [data/6g_testbed_dataset/EUR/](data/6g_testbed_dataset/EUR/). Refer to [docs/6g_dataset_setup.md](docs/6g_dataset_setup.md) for guidance on creating the corresponding `datasets.csv`, configuring `DATASET_TYPE`, and running Valentine-based relationship discovery when the CSV files do not expose explicit primary/foreign keys.
 
 To ingest the data in the local development, it is necessary to follow the steps from [Neo4j Desktop setup](#neo4j-desktop-setup) beforehand.
 
