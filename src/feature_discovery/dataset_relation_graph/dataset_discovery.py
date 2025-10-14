@@ -52,9 +52,9 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         # matcher = Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
         # matcher = Coma()  # COMA matcher
         # matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
-        matcher = SimilarityFlooding()  # Similarity flooding matcher
+        # matcher = SimilarityFlooding()  # Similarity flooding matcher
         # matcher = Cupid()  # Cupid matcher
-        # matcher = DistributionBased()  # Distribution-based matcher
+        matcher = DistributionBased()  # Distribution-based matcher
 
         # print(matcher)
         matches = valentine_match(df1, df2, matcher)

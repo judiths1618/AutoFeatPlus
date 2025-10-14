@@ -1,5 +1,3 @@
 base_table_path,base_table_name,base_table_label,target_column,dataset_type
-EUR/6907619,amf-performance.csv,eur-amf,lat99,regression
-EUR/6907619,golang-web-server-performance.csv,eur-golang,lat99,regression
-EUR/6907619,python-web-server-performance.csv,eur-python,lat99,regression
-EUR/6907619,rabbitmq-performance.csv,eur-rabbitmq,lat99,regression
+EUR/6907619,rabbitmq-performance.csv,EUR/6907619,time,regression
+
