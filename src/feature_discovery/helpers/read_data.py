@@ -1,8 +1,8 @@
 import pandas as pd
-import polars as pl
 
 from feature_discovery.config import DATA_FOLDER
 from feature_discovery.graph_processing.neo4j_transactions import get_node_by_id
+from feature_discovery.helpers.optional_polars import POLARS_AVAILABLE, pl
 
 
 def get_df_with_prefix(
@@ -19,7 +19,13 @@ def get_df_with_prefix(
     :return: 0: A pandas dataframe whose columns are prefixed with the node label, 1: the node label
     """
     node_label = get_node_by_id(node_id).get("id")
-    if use_polars:
+    if use_polars and not POLARS_AVAILABLE:
+        raise ModuleNotFoundError(
+            "Polars support requested but the 'polars' package is not installed. "
+            "Install it or call the pipeline with use_polars=False."
+        )
+
+    if use_polars and POLARS_AVAILABLE:
         dataframe = pl.read_csv(str(DATA_FOLDER / node_id), encoding="utf8", quote_char='"')
         if target_column:
             columns = dataframe.columns
