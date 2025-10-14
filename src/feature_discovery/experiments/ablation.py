@@ -11,6 +11,7 @@ from feature_discovery.experiments.evaluate_join_paths import evaluate_paths
 from feature_discovery.experiments.init_datasets import init_datasets
 from feature_discovery.experiments.result_object import Result
 from feature_discovery.experiments.utils_dataset import filter_datasets
+from feature_discovery.helpers.optional_polars import POLARS_AVAILABLE
 
 
 def autofeat(
@@ -24,7 +25,7 @@ def autofeat(
     no_relevance: bool = False,
     no_redundancy: bool = False,
     save_joins_to_disk: bool = True,
-    use_polars: bool = True,
+    use_polars: bool = POLARS_AVAILABLE,
 ) -> Tuple[List[Result], List[Tuple]]:
     logging.debug(f"Running on TFD (Transitive Feature Discovery) result with AutoGluon")
 

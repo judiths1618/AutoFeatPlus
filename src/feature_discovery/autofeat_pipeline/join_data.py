@@ -1,13 +1,12 @@
 from pathlib import Path
 
 import pandas as pd
-import polars as pl
-from polars import col
 
 from feature_discovery.graph_processing.neo4j_transactions import (
     get_pk_fk_nodes,
 )
 from feature_discovery.helpers.dict_utils import transform_node_to_dict
+from feature_discovery.helpers.optional_polars import POLARS_AVAILABLE, pl
 
 
 def join_directly_connected(base_table_id: str):
@@ -47,16 +46,19 @@ def join_directly_connected(base_table_id: str):
 #     return df1.join(df2, left_on=new_names[0], right_on=new_names[1], how=how).drop(new_names)
 
 def pl_outer_join(
-    df1: pl.DataFrame,
-    df2: pl.DataFrame,
+    df1,
+    df2,
     left_on: str,
     right_on: str,
     how: str = "left",
-) -> pl.DataFrame:
+) -> "pl.DataFrame":
     """
     Perform a safe join on two Polars DataFrames with temporary aliasing,
     avoiding column conflicts and missing-column crashes.
     """
+    if not POLARS_AVAILABLE:
+        raise ModuleNotFoundError("Polars is required for 'pl_outer_join' but is not installed.")
+
     left_tmp = f"{left_on}_tmp"
     right_tmp = f"{right_on}_tmp"
 
@@ -109,7 +111,7 @@ def join_and_save(
     if left_df[left_column_name].dtype != right_df[right_column_name].dtype:
         return None
 
-    if isinstance(left_df, pl.DataFrame):
+    if POLARS_AVAILABLE and isinstance(left_df, pl.DataFrame):
         partial_join = pl_outer_join(
             left_df,
             right_df,

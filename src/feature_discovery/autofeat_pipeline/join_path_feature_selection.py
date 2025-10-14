@@ -1,9 +1,8 @@
-from typing import List, Tuple, Optional
+from typing import List, Optional, Tuple
 import xxhash
 
 import numpy as np
 import pandas as pd
-import polars as pl
 from ITMO_FS.filters.multivariate import CMIM, MRMR
 from ITMO_FS.utils.information_theory import entropy, conditional_mutual_information
 from sklearn.preprocessing import KBinsDiscretizer
