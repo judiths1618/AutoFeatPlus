@@ -144,63 +144,55 @@ feature-discovery-cli ingest-data --data-discovery-threshold=0.55 --discover-con
 
 # 3. Experiments
 
-To run the experiments in Docker, first bash into the container: 
+To run the experiments in Docker, first bash into the container:
 ```bash
-   docker exec -it feature-discovery-runner /bin/bash
+docker exec -it feature-discovery-runner /bin/bash
 ```
 
-## Run AutoFeat
-`feature-discovery-cli --help` will show the commands for running experiments: 
+All experiment commands accept the same core arguments:
 
-1. `run-all` Runs all experiments (ARDA + base + AutoFeat).
+- `--dataset-labels` (required) – one or more labels from `data/benchmark/datasets.csv` (or the dataset type you exported).
+- `--results-file` (optional) – override the default CSV name written to [`results/`](results).
 
-` feature-discovery-cli run-all --help ` will show you the parameters needed for running 
+You can inspect additional flags with `feature-discovery-cli <command> --help`.
 
-2. `run-arda` Runs the ARDA experiments
+### Run the full AutoFeat suite (ARDA + base + AutoFeat)
 
-` feature-discovery-cli run-arda --help ` will show you the parameters needed for running 
+```bash
+feature-discovery-cli run-all --dataset-labels steel --results-file results/steel_run_all.csv
+```
 
-`--dataset-labels` has to be the label of one of the datasets from `datasets.csv` file which resides in [data/benchmark](data/benchmark).
+The command above sequentially executes the ARDA, base, and AutoFeat pipelines for the `steel` dataset and stores the merged
+metrics in `results/steel_run_all.csv`.
 
-`--results-file` by default the experiments are saved as CSV with a predefined filename in [results](/results)
+### Run only the ARDA baselines
 
-Example:
+```bash
+feature-discovery-cli run-arda --dataset-labels steel --results-file results/steel_arda.csv
+```
 
-`feature-discovery-cli run-arda --dataset-labels steel` Will run the experiments on the _steel_ dataset and the results 
-are saved in [results folder](results)
+Use this when you only need the ARDA benchmark without running any feature discovery steps.
 
+### Run the base models
 
-3. `run-base` Runs the base experiments
+```bash
+feature-discovery-cli run-base --dataset-labels steel --results-file results/steel_base.csv
+```
 
-` feature-discovery-cli run-base --help ` will show you the parameters needed for running 
+This evaluates the baseline models on the raw table without any AutoFeat augmentations.
 
-`--dataset-labels` has to be the label of one of the datasets from `datasets.csv` file which resides in [data/benchmark](data/benchmark).
+### Run AutoFeat with custom hyper-parameters
 
-`--results-file` by default the experiments are saved as CSV with a predefined filename.
+```bash
+feature-discovery-cli run-autofeat \
+  --dataset-labels steel \
+  --results-file results/steel_autofeat.csv \
+  --value-ratio 0.55 \
+  --top-k 15
+```
 
-Example: 
-
-`feature-discovery-cli run-base --dataset-labels steel` Will run the experiments on the _steel_ dataset and the results 
-are saved in [results folder](results)
-
-4. `run-autofeat` Runs the AutoFeat experiments.   
-
-` feature-discovery-cli run-autofeat --help ` will show you the parameters needed for running 
-
-`--dataset-labels` has to be the label of one of the datasets from `datasets.csv` file which resides in [data/benchmark](data/benchmark).
-
-`--results-file` by default the experiments are saved as CSV with a predefined filename.
-
-`--value-ratio` one of the hyper-parameters of our approach, it represents a data quality metric - the percentage of 
-null values allowed in the datasets. Default: 0.55
-
-`--top-k` one of the hyper-parameters of our approach, 
-it represents the number of features to select from each dataset and the number of paths. Default: 15 
-
-Example: 
-
-`feature-discovery-cli run-autofeat --dataset-labels steel` Will run the experiments on the _steel_ 
-dataset and the results are saved in [results folder](results)
+`--value-ratio` controls the maximum fraction of missing values tolerated when selecting features, and `--top-k` sets the
+number of join-path features to keep per dataset. Adjust both depending on the sparsity of your data.
 
 ## Datasets 
 
