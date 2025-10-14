@@ -22,18 +22,23 @@ Create `data/6g_testbed_dataset/datasets.csv` with the usual schema:
 
 ```csv
 base_table_path,base_table_name,base_table_label,target_column,dataset_type
-EUR/6907619/rabbitmq-performance.csv,rabbitmq-performance.csv,EUR/6907619,label,binary
+EUR/6907619,python-web-server-performance.csv,eur-python,lat99,regression
 ```
 
 Key points:
 
-- `base_table_path` is the path to the base CSV relative to `data/<DATASET_TYPE>`.
+- `base_table_path` is the directory that contains the base CSV, relative to `data/<DATASET_TYPE>`.
 - `base_table_name` is only the file name and must match the actual CSV file.
 - `base_table_label` is the identifier you will pass to the CLI (`--dataset-label`). Re-using the folder (`EUR/6907619`) keeps discovery scoped to the right subtree.
-- `target_column` is the supervised learning label in the base table. Replace `label` with the real target column from your dataset (for example, `lat99` if you create a regression target).
-- `dataset_type` controls which AutoML heads run (`binary`, `multiclass`, or `regression`). Pick the appropriate value for your task.
+- `target_column` is the supervised learning label in the base table. Replace `lat99` with the real target column from your dataset.
+- `dataset_type` controls which AutoML heads run (`binary`, `multiclass`, or `regression`). The latency columns in the 6G release are continuous, so `regression` is a sensible default.
 
 If you want to model multiple tables from the same download separately, add one row per base table.
+
+This repository already includes a `datasets.csv` that registers each of the
+four published tables (`eur-python`, `eur-golang`, `eur-rabbitmq`, and
+`eur-amf`) with `lat99` as the regression target. Adjust the labels and
+targets if you create alternative prediction tasks.
 
 ## 3. Point AutoFeat to the 6G data directory
 
