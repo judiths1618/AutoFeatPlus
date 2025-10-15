@@ -23,7 +23,9 @@ def _get_augmented_dataset_path(output_dir: Path, dataset_label: str, join_name:
     safe_dataset_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", dataset_label)
     dataset_hash = hashlib.sha1(join_name.encode("utf8")).hexdigest()[:12]
     filename = f"{safe_dataset_label}_{dataset_hash}.csv"
+    print(f"Augmented dataset filename: {filename}")
     output_dir.mkdir(parents=True, exist_ok=True)
+
     return output_dir / filename
 
 
