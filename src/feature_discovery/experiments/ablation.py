@@ -25,6 +25,7 @@ def autofeat(
     no_relevance: bool = False,
     no_redundancy: bool = False,
     save_joins_to_disk: bool = True,
+    store_augmented_data: bool = True,
     use_polars: bool = POLARS_AVAILABLE,
 ) -> Tuple[List[Result], List[Tuple]]:
     logging.debug(f"Running on TFD (Transitive Feature Discovery) result with AutoGluon")
@@ -50,7 +51,10 @@ def autofeat(
     logging.debug(f"FINISHED {approach}")
 
     all_results, top_k_paths = evaluate_paths(
-        bfs_result=bfs_traversal, problem_type=dataset.dataset_type, algorithm=algorithm
+        bfs_result=bfs_traversal,
+        problem_type=dataset.dataset_type,
+        algorithm=algorithm,
+        store_augmented_data=store_augmented_data,
     )
     for result in all_results:
         result.approach = approach

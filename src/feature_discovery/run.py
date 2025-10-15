@@ -57,9 +57,19 @@ def get_arda_results(dataset: Dataset, algorithm: str, sample_size: int = 3000) 
     return results
 
 
-def get_tfd_results(dataset: Dataset, algorithm: str, top_k: int = 15, value_ratio: float = 0.65) -> List:
+def get_tfd_results(
+    dataset: Dataset,
+    algorithm: str,
+    top_k: int = 15,
+    value_ratio: float = 0.65,
+    store_augmented_data: bool = True,
+) -> List:
     spearman_mrmr_results, top_k_paths = autofeat(
-        dataset=dataset, top_k=top_k, value_ratio=value_ratio, algorithm=algorithm
+        dataset=dataset,
+        top_k=top_k,
+        value_ratio=value_ratio,
+        algorithm=algorithm,
+        store_augmented_data=store_augmented_data,
     )
 
     logging.debug("Save results ... ")

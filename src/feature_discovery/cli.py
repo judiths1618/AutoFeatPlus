@@ -117,13 +117,27 @@ def run_autofeat(
         str, typer.Option(help="CSV file where the results will be written")
     ] = "results_autofeat.csv",
     value_ratio: Annotated[float, typer.Option(help="Value ratio to be used in the TFD experiments")] = 0.65,
+    store_augmented_data: Annotated[
+        bool,
+        typer.Option(
+            help="Persist each augmented dataset under results/augmented_datasets",
+        ),
+    ] = True,
 ):
     """Runs the AutoFeat experiments."""
     all_results = []
     datasets = filter_datasets(dataset_labels)
 
     for dataset in tqdm.tqdm(datasets):
-        all_results.extend(get_tfd_results(dataset, algorithm, top_k, value_ratio))
+        all_results.extend(
+            get_tfd_results(
+                dataset,
+                algorithm,
+                top_k,
+                value_ratio,
+                store_augmented_data=store_augmented_data,
+            )
+        )
 
     pd.DataFrame(all_results).to_csv(RESULTS_FOLDER / results_file, index=False)
 
