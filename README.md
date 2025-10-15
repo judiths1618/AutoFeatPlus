@@ -186,11 +186,13 @@ feature-discovery-cli run-autofeat \
   --dataset-labels steel \
   --results-file results/steel_autofeat.csv \
   --value-ratio 0.55 \
-  --top-k 15
+  --top-k 15 \
+  --no-store-augmented-data
 ```
 
 `--value-ratio` controls the maximum fraction of missing values tolerated when selecting features, and `--top-k` sets the
-number of join-path features to keep per dataset. Adjust both depending on the sparsity of your data.
+number of join-path features to keep per dataset. Adjust both depending on the sparsity of your data. Pass
+`--no-store-augmented-data` when you want to evaluate AutoFeat without writing the intermediate augmented tables to disk.
 
 ## Datasets 
 
