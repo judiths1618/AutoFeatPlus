@@ -1,4 +1,7 @@
+import hashlib
 import logging
+import re
+from pathlib import Path
 from typing import Tuple, List
 
 import pandas as pd
@@ -14,12 +17,23 @@ from feature_discovery.experiments.utils_dataset import filter_datasets
 from feature_discovery.helpers.read_data import get_df_with_prefix
 
 
+def _get_augmented_dataset_path(output_dir: Path, dataset_label: str, join_name: str) -> Path:
+    """Return a deterministic file path for an augmented dataset."""
+
+    safe_dataset_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", dataset_label)
+    dataset_hash = hashlib.sha1(join_name.encode("utf8")).hexdigest()[:12]
+    filename = f"{safe_dataset_label}_{dataset_hash}.csv"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    return output_dir / filename
+
+
 def evaluate_paths(bfs_result: AutoFeat, problem_type: str, algorithm: str, top_k_paths: int = 15) -> Tuple[List[Result], List[Tuple]]:
     logging.debug(f"Evaluate top-{top_k_paths} paths ... ")
     sorted_paths = sorted(bfs_result.ranking.items(), key=lambda r: (r[1], -get_path_length(r[0])), reverse=True)
     top_k_path_list = sorted_paths if len(sorted_paths) < top_k_paths else sorted_paths[:top_k_paths]
     base_features = bfs_result.partial_join_selected_features[bfs_result.base_table_id]
 
+    augmented_dir = RESULTS_FOLDER / "augmented_datasets"
     all_results = []
     for path in tqdm.tqdm(top_k_path_list):
         join_name, rank = path
@@ -59,7 +73,16 @@ def evaluate_paths(bfs_result: AutoFeat, problem_type: str, algorithm: str, top_
             features = bfs_result.partial_join_selected_features[bfs_result.base_table_id]
             features.append(bfs_result.target_column)
 
-        results, _ = evaluate_all_algorithms(dataframe=dataframe[features],
+        augmented_dataframe = dataframe[features]
+        augmented_path = _get_augmented_dataset_path(
+            augmented_dir,
+            bfs_result.base_table_label,
+            join_name,
+        )
+        augmented_dataframe.to_csv(augmented_path, index=False)
+        logging.info("Saved augmented dataset for join '%s' to %s", join_name, augmented_path)
+
+        results, _ = evaluate_all_algorithms(dataframe=augmented_dataframe,
                                              target_column=bfs_result.target_column,
                                              problem_type=problem_type,
                                              algorithm=algorithm)
