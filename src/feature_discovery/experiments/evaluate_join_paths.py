@@ -105,6 +105,7 @@ def evaluate_paths(
                 bfs_result.base_table_label,
                 join_name,
             )
+            augmented_path.parent.mkdir(parents=True, exist_ok=True)
             augmented_dataframe.to_csv(augmented_path, index=False)
             logging.info("Saved augmented dataset for join '%s' to %s", join_name, augmented_path)
 
