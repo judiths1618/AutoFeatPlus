@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import re
 from pathlib import Path
 from typing import Tuple, List
 
@@ -19,8 +20,10 @@ from feature_discovery.helpers.read_data import get_df_with_prefix
 def _get_augmented_dataset_path(output_dir: Path, dataset_label: str, join_name: str) -> Path:
     """Return a deterministic file path for an augmented dataset."""
 
+    safe_dataset_label = re.sub(r"[^A-Za-z0-9_.-]+", "_", dataset_label)
     dataset_hash = hashlib.sha1(join_name.encode("utf8")).hexdigest()[:12]
-    filename = f"{dataset_label}_{dataset_hash}.csv"
+    filename = f"{safe_dataset_label}_{dataset_hash}.csv"
+    output_dir.mkdir(parents=True, exist_ok=True)
     return output_dir / filename
 
 
@@ -31,8 +34,6 @@ def evaluate_paths(bfs_result: AutoFeat, problem_type: str, algorithm: str, top_
     base_features = bfs_result.partial_join_selected_features[bfs_result.base_table_id]
 
     augmented_dir = RESULTS_FOLDER / "augmented_datasets"
-    augmented_dir.mkdir(parents=True, exist_ok=True)
-
     all_results = []
     for path in tqdm.tqdm(top_k_path_list):
         join_name, rank = path
