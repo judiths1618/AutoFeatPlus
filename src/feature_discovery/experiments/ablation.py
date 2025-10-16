@@ -65,6 +65,7 @@ def autofeat(
         result.cutoff_threshold = value_ratio
 
     logging.debug("Save results ... ")
+    print(f'Save results ... {all_results, top_k_paths}')
     pd.DataFrame(all_results).to_csv(RESULTS_FOLDER / f"{dataset.base_table_label}_{approach}.csv", index=False)
 
     return all_results, top_k_paths
