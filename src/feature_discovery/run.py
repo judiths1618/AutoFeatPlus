@@ -79,8 +79,6 @@ def get_tfd_results(
     pd.DataFrame(top_k_paths, columns=["path", "score"]).to_csv(
         paths_output, index=False
     )
-    
-    # exit()
 
     return spearman_mrmr_results
 
