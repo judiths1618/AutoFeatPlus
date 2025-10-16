@@ -131,6 +131,7 @@ def join_and_save(
         raise Exception("Unknown dataframe type")
 
     if save_to_disk:
+        join_path.parent.mkdir(parents=True, exist_ok=True)
         if csv:
             partial_join.to_csv(join_path, index=False)
         else:
