@@ -73,8 +73,10 @@ def get_tfd_results(
     )
 
     logging.debug("Save results ... ")
-    pd.DataFrame(top_k_paths, columns=['path', 'score']).to_csv(
-        f"paths_tfd_{dataset.base_table_label}_{value_ratio}.csv", index=False
+    paths_output = RESULTS_FOLDER / f"paths_tfd_{dataset.base_table_label}_{value_ratio}.csv"
+    paths_output.parent.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(top_k_paths, columns=["path", "score"]).to_csv(
+        paths_output, index=False
     )
 
     return spearman_mrmr_results
