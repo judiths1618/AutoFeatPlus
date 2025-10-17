@@ -72,8 +72,8 @@ def run_join_all(
         str, typer.Option(help="CSV file where the results will be written")
     ] = "results_join_all.csv",
 ):
-    """Runs 4 experiments: join all tables in BFS and DFS order, then same approaches with filter
-    feature selection: spearman, and with wrapper feature selection: forward selection"""
+    """Runs the Join-All baseline using BFS joins with two evaluation modes: all features and a
+    Spearman filter feature-selection subset."""
 
     all_results = []
     datasets = filter_datasets(dataset_labels)
