@@ -30,7 +30,7 @@ class TestARDA(unittest.TestCase):
         features = arda.gen_features(A, 0)
         features_neg = arda.gen_features(A, -1)
         self.assertEqual(features.shape, (0, ))
-        self.assertEqual(features.shape, (0, ))
+        self.assertEqual(features_neg.shape, (0, ))  # Negative requests should yield no features
 
 
     def test_gen_features_size_above_zero(self):
