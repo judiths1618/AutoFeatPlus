@@ -129,6 +129,7 @@ def join_all(dataset: Dataset, algorithm: str):
             res.total_time += res.feature_selection_time
         all_results.extend(results)
 
+    print(f'Join-All results: {all_results}')
     return all_results
 
 
@@ -142,6 +143,7 @@ def non_augmented(dataframe: pd.DataFrame, dataset: Dataset, algorithm: str):
         res.data_path = dataset.base_table_label
         res.data_label = dataset.base_table_label
 
+    print(f'Non-augmented results: {results}')
     return results
 
 
@@ -180,6 +182,7 @@ def arda(dataset: Dataset, algorithm: str, sample_size: int):
         result.feature_selection_time = end - start
         result.total_time += result.feature_selection_time
 
+    print(f'ARDA results: {results}')
     return results
 
 
