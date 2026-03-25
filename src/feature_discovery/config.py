@@ -16,6 +16,8 @@ DATA_FOLDER = ROOT_FOLDER / DATA / DATASET_TYPE
 RESULTS_FOLDER = ROOT_FOLDER / "results" / "6g_data"
 AUTO_GLUON_FOLDER = ROOT_FOLDER / "AutogluonModels"
 
+PROFILE = "dataLakeProfiles/LSHProfiles"
+
 print(f"DATA_FOLDER: {DATA_FOLDER}")
 print(f"RESULTS_FOLDER: {RESULTS_FOLDER}")  
 

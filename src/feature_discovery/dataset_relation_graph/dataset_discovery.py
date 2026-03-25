@@ -12,8 +12,11 @@ from valentine.algorithms import Cupid
 from valentine.algorithms import DistributionBased
 from valentine.algorithms import SimilarityFlooding  
 
-from feature_discovery.config import DATA_FOLDER, CONNECTIONS
+from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
+import datasketch
+from helpers.buildProfile import buildingProfile
+
 
 
 def profile_valentine_all(valentine_threshold: float = 0.55):
@@ -81,3 +84,78 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
                                             weight=similarity)
 
     Parallel(n_jobs=-1)(delayed(profile)(table_pair) for table_pair in tqdm(itertools.combinations(files, r=2)))
+
+
+# offline compute
+def filterDLake():
+    dLakePath = f"{PROFILE}/LSHPROFILES"
+    files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+    dLakeFiles =  glob.glob(dLakePath)
+
+    print("data files", files, flush=True)
+    print("profiles", dLakeFiles, flush=True)
+
+    filesToProcess = []
+    for f in files:
+        if f not in dLakeFiles:
+            filesToProcess.append(f)
+    if len(filesToProcess) > 0:
+        return f
+    
+    return -1
+
+
+def profileDataLakeLSH(numPerms = 128, threshold=0.5):
+    """ 
+    Building the profiles of
+    """
+    if filterDLake() == -1:
+        return 0
+    files = filterDLake()
+    for f in files:
+        buildingProfile(f, threshold=threshold, numPerms=numPerms)
+
+
+def buildLSHDataLake(dLake="default", numPerms = 128, threshold=0.5):
+    
+    import os
+    dLakePath = f"{PROFILE}/{dLake}"
+    profiles = os.listdir(dLakePath)
+
+        
+
+
+def insertLSHProfile(tablePair):
+    table1 = tablePair[0]
+    table2 = tablePair[1]
+
+    a_table_path = table1.partition(f"{DATA_FOLDER}/")[2]
+    b_table_path = table2.partition(f"{DATA_FOLDER}/")[2]
+
+
+    a_table_name = a_table_path.split("/")[-1]
+    b_table_name = b_table_path.split("/")[-1]
+
+    lsh1 = 
+
+    
+
+
+def insetrBaseTableLSHIndex(file, dlake="default"):
+    """
+    Input shoudl be the base table, or table to be augmented
+    The datalake of choice
+
+    return is inserting the basetable into related join graph
+    """
+    if dlake == 'default':
+        dLakePath =  f"{PROFILE}/LSHPROFILES"
+    
+    baseDF = pd.read_csv()
+
+
+
+
+    
+def profileDataLakeEmbedding():
+    pass
