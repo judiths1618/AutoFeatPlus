@@ -3,7 +3,7 @@ import glob
 import pandas as pd
 
 from feature_discovery.config import CONNECTIONS, DATA_FOLDER
-from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_all, profile_valentine_dataset
+from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_all, profile_valentine_dataset, profileDataLakeLSH
 from feature_discovery.experiments.dataset_object import Dataset
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables, create_node
 
@@ -61,10 +61,13 @@ def ingest_nodes(dataset_folder_name: str = None) -> None:
         create_node(table_path, table_name)
 
 
-def ingest_data_with_pk_fk(dataset: Dataset, profile_valentine: bool = False, mix_datasets: bool = False):
+def ingest_data_with_pk_fk(dataset: Dataset, profile_valentine: bool = False, profile_LSH: bool=False, mix_datasets: bool = False):
     mapping = ingest_unprocessed_data(dataset.base_table_label)
 
     if profile_valentine and mix_datasets:
         profile_valentine_all()
     elif profile_valentine and not mix_datasets:
         profile_valentine_dataset(dataset.base_table_label)
+
+    if profile_LSH and mix_datasets:
+

@@ -12,10 +12,12 @@ from valentine.algorithms import Cupid
 from valentine.algorithms import DistributionBased
 from valentine.algorithms import SimilarityFlooding  
 
+
 from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 import datasketch
-from helpers.buildProfile import buildingProfile
+from helpers.buildProfile import buildingProfile, collectLshProfiles
+import chromadb
 
 
 
@@ -103,7 +105,7 @@ def filterDLake():
         return f
     
     return -1
-
+    
 
 def profileDataLakeLSH(numPerms = 128, threshold=0.5):
     """ 
@@ -112,46 +114,91 @@ def profileDataLakeLSH(numPerms = 128, threshold=0.5):
     if filterDLake() == -1:
         return 0
     files = filterDLake()
+    dLakeCollection = {}
+    # construction lsh collection for future node additions
     for f in files:
-        buildingProfile(f, threshold=threshold, numPerms=numPerms)
+        minHashCollection = buildingProfile(f, threshold=threshold, numPerms=numPerms)
+        if minHashCollection == {}:
+            continue
+        dLakeCollection[f] = minHashCollection
+    
+    collectLshProfiles()
+
+    # construct the relationgraph from the hashes
+    
+    fileKeys = dLakeCollection.keys()
 
 
-def buildLSHDataLake(dLake="default", numPerms = 128, threshold=0.5):
+# need to parallelize this
+    for f in fileKeys:
+        buildLSHDataLake(f, dLakeCollection[f])
+               
+    
+
+def buildLSHDataLake(hashes, dLake="default", numPerms = 128, threshold=0.5):
     
     import os
+    import pickle
     dLakePath = f"{PROFILE}/{dLake}"
+    dLakeFilePath = dLakePath + "/{}"
     profiles = os.listdir(dLakePath)
+    if "globalLsh.pkl" in profiles:
+        with open(f"{dLakePath}\globalLsh.pkl") as f2:
+            globalLSH = pickle.load(f2)
 
-        
-
-
-def insertLSHProfile(tablePair):
-    table1 = tablePair[0]
-    table2 = tablePair[1]
-
-    a_table_path = table1.partition(f"{DATA_FOLDER}/")[2]
-    b_table_path = table2.partition(f"{DATA_FOLDER}/")[2]
-
-
-    a_table_name = a_table_path.split("/")[-1]
-    b_table_name = b_table_path.split("/")[-1]
-
-    lsh1 = 
-
+    else:
+        raise FileExistsError("Global LSH Index needs to be constructed")
     
+    for c in hashes:
+        tempMinHash = hashes[c]
+        tempRes = globalLSH.query(tempMinHash)
+        if len(tempRes) > 0:
+            file2, col2 = c.split("_")
+            for tr in tempRes:
+                file1, col1 = tr.split("_")
+                merge_nodes_relation_tables(a_table_name=file1,
+                                        b_table_name=file2,
+                                        a_table_path=dLakeFilePath.format(file1),
+                                        b_table_path=dLakeFilePath.format(file2),
+                                        a_col=col1,
+                                        b_col=col2,
+                                        weight=threshold)
 
+                merge_nodes_relation_tables(a_table_name=file2,
+                                        b_table_name=file1,
+                                        a_table_path=dLakeFilePath.format(file2),
+                                        b_table_path=dLakeFilePath.format(file1),
+                                        a_col=col2,
+                                        b_col=col1,
+                                        weight=threshold)
 
-def insetrBaseTableLSHIndex(file, dlake="default"):
+                
+
+def insertBaseTableLSHIndex(file, dlake="default"):
     """
     Input shoudl be the base table, or table to be augmented
     The datalake of choice
 
     return is inserting the basetable into related join graph
     """
-    if dlake == 'default':
+    if dlake == "default":
         dLakePath =  f"{PROFILE}/LSHPROFILES"
+    else:
+        dLakePath = f"{PROFILE/{dlake}}"
+
+    from pathlib import Path
+    if Path(f"{file}").exists():
+        baseDF = pd.read_csv(baseDF)
     
-    baseDF = pd.read_csv()
+    elif isinstance(file, pd.DataFrame):
+        baseDF = file
+
+    else:
+        raise TypeError("Cannot process base table")
+    
+    baseCols = list(baseDF.columns)
+
+
 
 
 
