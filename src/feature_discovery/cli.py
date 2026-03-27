@@ -243,6 +243,33 @@ def ingest_data(
         for dataset in ALL_DATASETS:
             profile_valentine_dataset(dataset.base_table_label, valentine_threshold=data_discovery_threshold)
 
+@app.command()
+def ingest_data_LSH(
+    data_discovery_threshold: Annotated[
+        float,
+        typer.Option(
+            help="Run dataset discovery to find more connections within the entire data lake with given"
+            " accuracy rate threshold"
+        ),
+    ] = None,
+    discover_connections_data_lake: Annotated[
+        bool, typer.Option(help="Run dataset discovery to find more connections within the entire data lake")
+    ] = False,
+):
+    """
+    Ingest all dataset from specified "data" folder.
+    """
+    ingest_nodes()
+
+    if data_discovery_threshold and discover_connections_data_lake:
+        profile_valentine_all(valentine_threshold=data_discovery_threshold)
+        return
+
+    if data_discovery_threshold and not discover_connections_data_lake:
+        for dataset in ALL_DATASETS:
+            profile_valentine_dataset(dataset.base_table_label, valentine_threshold=data_discovery_threshold)
+
+
 
 if __name__ == "__main__":
     app()
