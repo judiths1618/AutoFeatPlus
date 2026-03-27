@@ -55,16 +55,33 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
 
         # Instantiate matcher and run it
         # matcher = Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
-        matcher = Coma()  # COMA matcher
+        schema_matcher = Coma()  # COMA matcher
+        instanance_matcher =  Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
+
         # matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
         # matcher = SimilarityFlooding()  # Similarity flooding matcher
         # matcher = Cupid()  # Cupid matcher
         # matcher = DistributionBased()  # Distribution-based matcher
 
         # print(matcher)
-        matches = valentine_match(df1, df2, matcher)
+        schema_matches = valentine_match(df1, df2, schema_matcher)
 
-        for item in matches.items():
+        cols1 = set()
+        cols2 = set()
+        for item in schema_matches.items():
+            ((_, col_from), (_, col_to)), similarity = item
+            cols1.add(col_from)
+            cols2.add(col_to)
+        cols1 = list(cols1)
+        cols2 = list(cols2)        
+        schemaMatchedDF1 = df1[cols1]
+        schemaMatchedDF2 = df2[cols2]
+
+
+        instance_matches = valentine_match(schemaMatchedDF1, schemaMatchedDF2, instanance_matcher)
+        
+
+        for item in instance_matches.items():
             ((_, col_from), (_, col_to)), similarity = item
             if similarity > valentine_threshold:
                 print(f"Similarity {similarity} between:\n\t{a_table_path} -- {col_from}\n\t{b_table_path} -- {col_to}")
@@ -89,10 +106,16 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
 
 
 # offline compute
-def filterDLake():
-    dLakePath = f"{PROFILE}/LSHPROFILES"
-    files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
-    dLakeFiles =  glob.glob(dLakePath)
+def filterDLake(dLake=None):
+    if dLake is None:
+        dLakePath = f"{PROFILE}/LSHPROFILES/Global"
+        files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+        dLakeFiles =  glob.glob(dLakePath)
+    
+    else:
+        dLakePath = f"{PROFILE}/LSHPROFILES/{dLake}"
+        files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+        dLakeFiles =  glob.glob(dLakePath)
 
     print("data files", files, flush=True)
     print("profiles", dLakeFiles, flush=True)
@@ -103,11 +126,40 @@ def filterDLake():
             filesToProcess.append(f)
     if len(filesToProcess) > 0:
         return f
-    
+        
     return -1
     
 
-def profileDataLakeLSH(numPerms = 128, threshold=0.5):
+
+
+def profile_LSH_all(numPerms = 128, threshold=0.5):
+    """ 
+    Building all the minhash profiles of the datalake
+    """
+    if filterDLake() == -1:
+        return 0
+    files = filterDLake()
+    dLakeCollection = {}
+    # construction lsh collection for future node additions
+    for f in files:
+        minHashCollection = buildingProfile(f, threshold=threshold, numPerms=numPerms)
+        if minHashCollection == {}:
+            continue
+        dLakeCollection[f] = minHashCollection
+    
+    collectLshProfiles()
+
+    # construct the relationgraph from the hashes
+    
+    fileKeys = dLakeCollection.keys()
+
+
+# need to parallelize this
+    for f in fileKeys:
+        buildLSHDataLake(f, dLakeCollection[f])
+
+        
+def profileDataLakeLSH(dLake, numPerms = 128, threshold=0.5):
     """ 
     Building the profiles of
     """

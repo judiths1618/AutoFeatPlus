@@ -3,7 +3,7 @@ import glob
 import pandas as pd
 
 from feature_discovery.config import CONNECTIONS, DATA_FOLDER
-from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_all, profile_valentine_dataset, profileDataLakeLSH
+from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_all, profile_valentine_dataset, profile_LSH_all
 from feature_discovery.experiments.dataset_object import Dataset
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables, create_node
 
@@ -47,7 +47,7 @@ def ingest_unprocessed_data(dataset_folder_name: str = None):
 
 def ingest_nodes(dataset_folder_name: str = None) -> None:
     print("Process the tables ...")
-
+    # datafolder is the name of the dlake
     if dataset_folder_name:
         files = glob.glob(f"{DATA_FOLDER / dataset_folder_name}/**/*.csv", recursive=True)
     else:
@@ -70,4 +70,7 @@ def ingest_data_with_pk_fk(dataset: Dataset, profile_valentine: bool = False, pr
         profile_valentine_dataset(dataset.base_table_label)
 
     if profile_LSH and mix_datasets:
+        profile_LSH_all()
+    elif profile_LSH and not mix_datasets:
+        pass
 

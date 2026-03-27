@@ -9,7 +9,9 @@ print(f"TFD_ROOT_FOLDER: {ROOT_FOLDER}")
 
 CONNECTIONS = "connections.csv"
 
-DATASET_TYPE = os.getenv("DATASET_TYPE", "benchmark")
+
+DATASET_TYPE="6g_testbed_dataset"
+# DATASET_TYPE = os.getenv("DATASET_TYPE", "benchmark")
 
 DATA = "data"
 DATA_FOLDER = ROOT_FOLDER / DATA / DATASET_TYPE
