@@ -15,8 +15,8 @@ from valentine.algorithms import SimilarityFlooding
 
 from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
-import datasketch
-from helpers.buildProfile import buildingProfile, collectLshProfiles
+from datasketch import MinHash
+from feature_discovery.helpers.buildLSHProfile import buildingProfile, collectLshProfiles, repoChecker
 import chromadb
 
 
@@ -64,8 +64,10 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         # matcher = DistributionBased()  # Distribution-based matcher
 
         # print(matcher)
-        schema_matches = valentine_match(df1, df2, schema_matcher)
+        
 
+        #### Schema matching for unionable relations
+        schema_matches = valentine_match(df1, df2, schema_matcher)
         cols1 = set()
         cols2 = set()
         for item in schema_matches.items():
@@ -77,7 +79,7 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         schemaMatchedDF1 = df1[cols1]
         schemaMatchedDF2 = df2[cols2]
 
-
+        ##### perform instance check on unionable relations as joinable relations are a subset of unionable relations
         instance_matches = valentine_match(schemaMatchedDF1, schemaMatchedDF2, instanance_matcher)
         
 
@@ -163,12 +165,14 @@ def profileDataLakeLSH(dLake, numPerms = 128, threshold=0.5):
     """ 
     Building the profiles of
     """
-    if filterDLake() == -1:
+
+    filterRes = filterDLake(dLake)
+    if filterRes == -1:
         return 0
-    files = filterDLake()
+
     dLakeCollection = {}
     # construction lsh collection for future node additions
-    for f in files:
+    for f in filterRes:
         minHashCollection = buildingProfile(f, threshold=threshold, numPerms=numPerms)
         if minHashCollection == {}:
             continue
@@ -176,26 +180,27 @@ def profileDataLakeLSH(dLake, numPerms = 128, threshold=0.5):
     
     collectLshProfiles()
 
-    # construct the relationgraph from the hashes
-    
+    # construct the relationgraph from the hashe
     fileKeys = dLakeCollection.keys()
-
-
-# need to parallelize this
+    ####################
+    # need to parallelize this
     for f in fileKeys:
         buildLSHDataLake(f, dLakeCollection[f])
                
     
 
-def buildLSHDataLake(hashes, dLake="default", numPerms = 128, threshold=0.5):
+def buildLSHDataLake(hashes, dLake="default",  threshold=0.5):
     
     import os
     import pickle
-    dLakePath = f"{PROFILE}/{dLake}"
-    dLakeFilePath = dLakePath + "/{}"
-    profiles = os.listdir(dLakePath)
+
+    dLakeProfilePath = f"{PROFILE}/LSHProfiles/{dLake}"
+    repoChecker(dLakeProfilePath)
+
+    dLakeFilePath = dLakeProfilePath + "/{}"
+    profiles = os.listdir(dLakeProfilePath)
     if "globalLsh.pkl" in profiles:
-        with open(f"{dLakePath}\globalLsh.pkl") as f2:
+        with open(f"{dLakeProfilePath}\globalLsh.pkl") as f2:
             globalLSH = pickle.load(f2)
 
     else:
@@ -226,35 +231,70 @@ def buildLSHDataLake(hashes, dLake="default", numPerms = 128, threshold=0.5):
 
                 
 
-def insertBaseTableLSHIndex(file, dlake="default"):
+def insertBaseTableLSHIndex(filepath, dlake="default", numPerms=128, threshold=0.5):
     """
     Input shoudl be the base table, or table to be augmented
     The datalake of choice
 
     return is inserting the basetable into related join graph
     """
-    if dlake == "default":
-        dLakePath =  f"{PROFILE}/LSHPROFILES"
-    else:
-        dLakePath = f"{PROFILE/{dlake}}"
+
+    dLakeProfilePath = f"{PROFILE}/LSHPROFILES/{dlake}"
+
+    dLakeFilePath = dLakeProfilePath + "/{}"
 
     from pathlib import Path
-    if Path(f"{file}").exists():
+    if Path(f"{filepath}").exists():
         baseDF = pd.read_csv(baseDF)
-    
-    elif isinstance(file, pd.DataFrame):
-        baseDF = file
-
     else:
-        raise TypeError("Cannot process base table")
+        raise FileNotFoundError("Base table does not exist, please check the table")
+
+    string_col_names = list(baseDF.select_dtypes(include=["object", "string"]).columns)
+
+
+    # check if global lsh index exists
+
+
+
+    baseTableMinHashCollection = {}
+    for col in string_col_names:
+        tempMinHash = MinHash(threshold=threshold, num_perm=numPerms)
+        baseTableMinHashCollection[f"{filepath}_{col}"] = tempMinHash
+
+    import pickle
+    with open(f"{dLakeProfilePath}/globalLsh.pkl", "rb") as f2:
+        globalLSH = pickle.load(f2)
     
-    baseCols = list(baseDF.columns)
 
+    for c in baseTableMinHashCollection:
+        tempMinHash = baseTableMinHashCollection[c]
+        tempRes = globalLSH.query(tempMinHash)
+        if len(tempRes) > 0:
+            file2, col2 = c.split("_")
+            for tr in tempRes:
+                file1, col1 = c.split("_")
+                merge_nodes_relation_tables(a_table_name=file1,
+                                        b_table_name=file2,
+                                        a_table_path=dLakeFilePath.format(file1),
+                                        b_table_path=dLakeFilePath.format(file2),
+                                        a_col=col1,
+                                        b_col=col2,
+                                        weight=threshold)
 
+                merge_nodes_relation_tables(a_table_name=file2,
+                                        b_table_name=file1,
+                                        a_table_path=dLakeFilePath.format(file2),
+                                        b_table_path=dLakeFilePath.format(file1),
+                                        a_col=col2,
+                                        b_col=col1,
+                                        weight=threshold)
 
 
 
 
     
 def profileDataLakeEmbedding():
+
+    
+
     pass

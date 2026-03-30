@@ -3,7 +3,7 @@ import pandas as pd
 import pickle
 from config import PROFILE
 
-def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
+def buildingProfile(file, dLake="default", threshold=0.5, numPerms=128):
 
     """
     Building the Lsh profiles of a file in the datalake
@@ -31,7 +31,7 @@ def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
         lshIndex.insert(f"{file.encode("utf8")}_{c.encode("utf8")}", tempMinHash)
 
 
-    with open(f"{PROFILE}\{dlake}\{file}.pkl", "wb") as f:
+    with open(f"{PROFILE}\LSHProfiles\{dLake}\{file}.pkl", "wb") as f:
         pickle.dump(lshIndex, f)
     
     print(f"Build LSH index for relevant cols of {file}")
@@ -41,11 +41,11 @@ def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
 
 def collectLshProfiles(dLake="default", threshold=0.5, numPerms=128):
     """
-    Merge all the individual LSHs
+    Merge all the individual LSHs and store in the proflies directory
     """
 
     import os
-    dPath = f"{PROFILE}\{dLake}"
+    dPath = f"{PROFILE}\LSHProfiles\{dLake}"
 
     globalLsh = MinHashLSH(threshold=threshold, num_perm=numPerms)
 
@@ -61,3 +61,11 @@ def collectLshProfiles(dLake="default", threshold=0.5, numPerms=128):
     
     with open(f"{dPath}\globalLSH.pkl", "wb") as f2:
         pickle.dump(globalLsh, f2)
+
+
+def repoChecker(dirPath):
+    from pathlib import Path
+    path = Path(dirPath)
+    path.mkdir(parents=True, exist_ok=True)
+
+
