@@ -10,7 +10,7 @@ import typer
 from typing_extensions import Annotated
 
 from feature_discovery.config import RESULTS_FOLDER
-from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_dataset, profile_valentine_all
+from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_dataset, profile_valentine_all, profile_LSH_all, profile_LSH_dataset
 from feature_discovery.dataset_relation_graph.ingest_data import ingest_nodes, ingest_data_with_pk_fk
 from feature_discovery.experiments.init_datasets import ALL_DATASETS
 from feature_discovery.experiments.utils_dataset import filter_datasets
@@ -252,22 +252,24 @@ def ingest_data_LSH(
             " accuracy rate threshold"
         ),
     ] = None,
+    data_discovery_permutations : Annotated[
+        int, typer.Option(help="Number of permutations to be used in MinHash Construction")
+    ] = 128,
     discover_connections_data_lake: Annotated[
         bool, typer.Option(help="Run dataset discovery to find more connections within the entire data lake")
     ] = False,
 ):
     """
-    Ingest all dataset from specified "data" folder.
+    Ingest all dataset from specified "data" folder Using LSH for the similarity calculation.
     """
     ingest_nodes()
-
     if data_discovery_threshold and discover_connections_data_lake:
-        profile_valentine_all(valentine_threshold=data_discovery_threshold)
+        profile_LSH_all(threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
         return
 
     if data_discovery_threshold and not discover_connections_data_lake:
         for dataset in ALL_DATASETS:
-            profile_valentine_dataset(dataset.base_table_label, valentine_threshold=data_discovery_threshold)
+            profile_LSH_dataset(deLake = dataset.base_table_label, threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
 
 
 

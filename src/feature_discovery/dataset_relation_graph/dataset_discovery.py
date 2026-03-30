@@ -13,7 +13,7 @@ from valentine.algorithms import DistributionBased
 from valentine.algorithms import SimilarityFlooding  
 
 
-from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
+from feature_discovery.config import DATA_FOLDER,DATA, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 from datasketch import MinHash
 from feature_discovery.helpers.buildLSHProfile import buildingProfile, collectLshProfiles, repoChecker
@@ -109,6 +109,10 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
 
 # offline compute
 def filterDLake(dLake=None):
+    """
+    Filter as per datalake:
+    Input: dLake - the datalake to filter for
+    """
     if dLake is None:
         dLakePath = f"{PROFILE}/LSHPROFILES/Global"
         files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
@@ -130,20 +134,22 @@ def filterDLake(dLake=None):
         return f
         
     return -1
-    
 
 
-
-def profile_LSH_all(numPerms = 128, threshold=0.5):
+def profile_LSH_all(dLake = None, numPerms = 128, threshold=0.5):
     """ 
     Building all the minhash profiles of the datalake
+
+    numPerms - number of permutations to be used in MinHash Construction
+    threshold - similarity threshold for the LSH index
+
     """
-    if filterDLake() == -1:
+    filterRes = filterDLake(dLake)
+    if filterRes == -1:
         return 0
-    files = filterDLake()
     dLakeCollection = {}
     # construction lsh collection for future node additions
-    for f in files:
+    for f in filterRes:
         minHashCollection = buildingProfile(f, threshold=threshold, numPerms=numPerms)
         if minHashCollection == {}:
             continue
@@ -161,7 +167,7 @@ def profile_LSH_all(numPerms = 128, threshold=0.5):
         buildLSHDataLake(f, dLakeCollection[f])
 
         
-def profileDataLakeLSH(dLake, numPerms = 128, threshold=0.5):
+def profileDataLakeLSH(dLake=None, numPerms = 128, threshold=0.5):
     """ 
     Building the profiles of
     """
@@ -189,12 +195,15 @@ def profileDataLakeLSH(dLake, numPerms = 128, threshold=0.5):
                
     
 
-def buildLSHDataLake(hashes, dLake="default",  threshold=0.5):
+def buildLSHDataLake(hashes, dLake=None,  threshold=0.5):
     
     import os
     import pickle
 
-    dLakeProfilePath = f"{PROFILE}/LSHProfiles/{dLake}"
+    if dLake is None:
+        dLakeProfilePath = f"{PROFILE}/LSHProfiles/Global"
+    else:
+        dLakeProfilePath = f"{PROFILE}/LSHProfiles/{dLake}"
     repoChecker(dLakeProfilePath)
 
     dLakeFilePath = dLakeProfilePath + "/{}"
@@ -231,7 +240,7 @@ def buildLSHDataLake(hashes, dLake="default",  threshold=0.5):
 
                 
 
-def insertBaseTableLSHIndex(filepath, dlake="default", numPerms=128, threshold=0.5):
+def insertBaseTableLSHIndex(filepath, dLake=None, numPerms=128, threshold=0.5):
     """
     Input shoudl be the base table, or table to be augmented
     The datalake of choice
@@ -239,8 +248,10 @@ def insertBaseTableLSHIndex(filepath, dlake="default", numPerms=128, threshold=0
     return is inserting the basetable into related join graph
     """
 
-    dLakeProfilePath = f"{PROFILE}/LSHPROFILES/{dlake}"
-
+    if dLake is None:
+        dLakeProfilePath = f"{PROFILE}/LSHProfiles/Global"
+    else:
+        dLakeProfilePath = f"{PROFILE}/LSHProfiles/{dLake}"
     dLakeFilePath = dLakeProfilePath + "/{}"
 
     from pathlib import Path
@@ -253,8 +264,6 @@ def insertBaseTableLSHIndex(filepath, dlake="default", numPerms=128, threshold=0
 
 
     # check if global lsh index exists
-
-
 
     baseTableMinHashCollection = {}
     for col in string_col_names:
