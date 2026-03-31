@@ -1,8 +1,8 @@
-def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, weight):
+def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, weight, type):
     tx_result = tx.run(
         "merge (a:Node {id: $a_table_path, label: $a_table_name}) "
         "merge (b:Node {id: $b_table_path, label: $b_table_name}) "
-        "merge (a)-[r:RELATED {from_column: $a_col, to_column: $b_col, from_label: $a_table_path, to_label: $b_table_path}]-(b) "
+        "merge (a)-[r:RELATED {from_column: $a_col, to_column: $b_col, from_label: $a_table_path, to_label: $b_table_path, type: $type}]-(b) "
         "on create set r.weight = $weight "
         "on match set r.weight = case when r.weight < $weight then $weight else r.weight end",
         a_table_path=a_table_path,
@@ -12,6 +12,7 @@ def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b
         a_col=a_col,
         b_col=b_col,
         weight=weight,
+        type=type
     )
 
     record = tx_result.single()

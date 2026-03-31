@@ -22,12 +22,15 @@ import chromadb
 
 
 def profile_valentine_all(valentine_threshold: float = 0.55):
+
+
     files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
     files = [f for f in files if CONNECTIONS not in f]
+    print("files for valentine", files)
 
-    print(f"Found {len(files)} files to profile with Valentine.")
+
+    # print(f"Found {len(files)} files to profile with Valentine.", flush=True)
     profile_valentine_logic(files, valentine_threshold)
-
 
 def profile_valentine_dataset(dataset_name: str, valentine_threshold: float = 0.55):
     files = glob.glob(f"{DATA_FOLDER / dataset_name}/**/*.csv", recursive=True)
@@ -40,8 +43,8 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
     def profile(table_pair):
         (tab1, tab2) = table_pair
 
-        a_table_path = tab1.partition(f"{DATA_FOLDER}/")[2]
-        b_table_path = tab2.partition(f"{DATA_FOLDER}/")[2]
+        a_table_path = tab1.partition(f"{DATA_FOLDER}")[2].rstrip("/\\")
+        b_table_path = tab2.partition(f"{DATA_FOLDER}")[2].rstrip("/\\")
 
         a_table_name = a_table_path.split("/")[-1]
         b_table_name = b_table_path.split("/")[-1]
@@ -50,15 +53,15 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         df1 = pd.read_csv(tab1, encoding="utf8")
         df2 = pd.read_csv(tab2, encoding="utf8")
 
-        print(f"Table 1: {df1.shape}, Table 2: {df2.shape}")
+        # print(f"Table 1: {df1.shape}, Table 2: {df2.shape}")
         # matches = valentine_match(df1, df2, Coma(strategy="COMA_OPT"))
 
         # Instantiate matcher and run it
         # matcher = Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
-        schema_matcher = Coma()  # COMA matcher
-        instanance_matcher =  Coma(use_instances = True, java_xmx = "4g") # use_instances=True enables instance-based matching
+        schema_matcher = Coma(java_xmx="256m")  # COMA matcher
+        # instanance_matcher =  Coma(use_instances = True, java_xmx="256m") # use_instances=True enables instance-based matching
 
-        # matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
+        instance_matcher = JaccardDistanceMatcher()  # Jaccard distance matcher
         # matcher = SimilarityFlooding()  # Similarity flooding matcher
         # matcher = Cupid()  # Cupid matcher
         # matcher = DistributionBased()  # Distribution-based matcher
@@ -67,25 +70,33 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
         
 
         #### Schema matching for unionable relations
+        # Ran into memory error when computing instance-based matching on the whole dataset, so performing schema-based matching first to reduce the number of comparisons for instance-based matching
         schema_matches = valentine_match(df1, df2, schema_matcher)
         cols1 = set()
         cols2 = set()
+        unionSchemas = set()
         for item in schema_matches.items():
             ((_, col_from), (_, col_to)), similarity = item
-            cols1.add(col_from)
-            cols2.add(col_to)
+            if similarity > valentine_threshold:
+                cols1.add(col_from)
+                cols2.add(col_to)
+                unionSchemas.add((col_from, col_to))
         cols1 = list(cols1)
         cols2 = list(cols2)        
         schemaMatchedDF1 = df1[cols1]
         schemaMatchedDF2 = df2[cols2]
 
-        ##### perform instance check on unionable relations as joinable relations are a subset of unionable relations
-        instance_matches = valentine_match(schemaMatchedDF1, schemaMatchedDF2, instanance_matcher)
-        
 
+        # instanance_matcher =  Coma(use_instances = True, java_xmx="256m") # use_instances=True enables instance-based matching
+
+        # ##### perform instance check on unionable relations as joinable relations are a subset of unionable relations
+        instance_matches = valentine_match(schemaMatchedDF1, schemaMatchedDF2, instance_matcher)
+
+        joinableSchema = set()        
         for item in instance_matches.items():
             ((_, col_from), (_, col_to)), similarity = item
             if similarity > valentine_threshold:
+                joinableSchema.add((col_from, col_to))
                 print(f"Similarity {similarity} between:\n\t{a_table_path} -- {col_from}\n\t{b_table_path} -- {col_to}")
 
                 merge_nodes_relation_tables(a_table_name=a_table_name,
@@ -94,7 +105,8 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
                                             b_table_path=b_table_path,
                                             a_col=col_from,
                                             b_col=col_to,
-                                            weight=similarity)
+                                            weight=similarity,
+                                            type="join")
 
                 merge_nodes_relation_tables(a_table_name=b_table_name,
                                             b_table_name=a_table_name,
@@ -102,36 +114,67 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
                                             b_table_path=a_table_path,
                                             a_col=col_to,
                                             b_col=col_from,
-                                            weight=similarity)
+                                            weight=similarity,
+                                            type="join")
+                
+        for pairs in joinableSchema:
+            if pairs in unionSchemas:
+                unionSchemas.remove(pairs)
+        for pairs in unionSchemas:
+            col_from, col_to = pairs
+            print(f"Similarity {similarity} between:\n\t{a_table_path} -- {col_from}\n\t{b_table_path} -- {col_to}")
+
+            merge_nodes_relation_tables(a_table_name=a_table_name,
+                                        b_table_name=b_table_name,
+                                        a_table_path=a_table_path,
+                                        b_table_path=b_table_path,
+                                        a_col=col_from,
+                                        b_col=col_to,
+                                        weight=similarity,
+                                        type="union")
+
+            merge_nodes_relation_tables(a_table_name=b_table_name,
+                                        b_table_name=a_table_name,
+                                        a_table_path=b_table_path,
+                                        b_table_path=a_table_path,
+                                        a_col=col_to,
+                                        b_col=col_from,
+                                        weight=similarity,
+                                        type="union")   
+
+                
+        
 
     Parallel(n_jobs=-1)(delayed(profile)(table_pair) for table_pair in tqdm(itertools.combinations(files, r=2)))
 
 
 # offline compute
-def filterDLake(dLake=None):
+def filterDLake(dLakePath):
     """
     Filter as per datalake:
     Input: dLake - the datalake to filter for
+
+    Output: List of files to compute or -1 for nothing to compute
     """
-    if dLake is None:
-        dLakePath = f"{PROFILE}/LSHPROFILES/Global"
-        files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
-        dLakeFiles =  glob.glob(dLakePath)
-    
-    else:
-        dLakePath = f"{PROFILE}/LSHPROFILES/{dLake}"
-        files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
-        dLakeFiles =  glob.glob(dLakePath)
 
-    print("data files", files, flush=True)
-    print("profiles", dLakeFiles, flush=True)
+    files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+    dLakeFiles =  glob.glob(f"{dLakePath}/*.pkl", recursive=True)
 
+
+    dLakeFiles = [f.partition(dLakePath)[-1].rstrip("/\\").lstrip("/\\").split(".pkl")[0] for f in dLakeFiles]
+    # print("data files", files, flush=True)
+    # print("profiles", dLakeFiles, flush=True)
     filesToProcess = []
+    print("filtering datalake files ...", flush=True)
     for f in files:
-        if f not in dLakeFiles:
+        fileName = f.partition(str(DATA_FOLDER))[-1].rstrip("/\\").lstrip("/\\").split("\\")[-1].split(".csv")[0]
+        # print("current file", fileName, flush=True)
+        if fileName == "datasets" or fileName == "splitSummary":
+            continue
+        if fileName.split(".csv")[0] not in dLakeFiles:
             filesToProcess.append(f)
     if len(filesToProcess) > 0:
-        return f
+        return filesToProcess
         
     return -1
 
@@ -144,13 +187,25 @@ def profile_LSH_all(dLake = None, numPerms = 128, threshold=0.5):
     threshold - similarity threshold for the LSH index
 
     """
-    filterRes = filterDLake(dLake)
+    if dLake is None:
+        dLakePath = f"{PROFILE}/LSHPROFILES/Global"
+    else:
+        dLakePath = f"{PROFILE}/LSHPROFILES/{dLake}"
+
+    repoChecker(dLakePath)
+    filterRes = filterDLake(dLakePath)
+
+    # print("filterRes", filterRes)
+
     if filterRes == -1:
         return 0
     dLakeCollection = {}
     # construction lsh collection for future node additions
-    for f in filterRes:
-        minHashCollection = buildingProfile(f, threshold=threshold, numPerms=numPerms)
+
+    # print("filtered datasets", filterRes)
+
+    for f in tqdm(filterRes):
+        minHashCollection = buildingProfile(f,dLake=dLake, threshold=threshold, numPerms=numPerms)
         if minHashCollection == {}:
             continue
         dLakeCollection[f] = minHashCollection
@@ -161,8 +216,10 @@ def profile_LSH_all(dLake = None, numPerms = 128, threshold=0.5):
     
     fileKeys = dLakeCollection.keys()
 
-
-# need to parallelize this
+    ####################
+    # need to parallelize this
+    print("Initializing the relation graph with LSH profiles ...", flush=True)
+    f
     for f in fileKeys:
         buildLSHDataLake(f, dLakeCollection[f])
 
@@ -204,14 +261,14 @@ def buildLSHDataLake(hashes, dLake=None,  threshold=0.5):
         dLakeProfilePath = f"{PROFILE}/LSHProfiles/Global"
     else:
         dLakeProfilePath = f"{PROFILE}/LSHProfiles/{dLake}"
-    repoChecker(dLakeProfilePath)
 
     dLakeFilePath = dLakeProfilePath + "/{}"
-    profiles = os.listdir(dLakeProfilePath)
-    if "globalLsh.pkl" in profiles:
-        with open(f"{dLakeProfilePath}\globalLsh.pkl") as f2:
-            globalLSH = pickle.load(f2)
 
+    profiles = os.listdir(dLakeProfilePath)
+    print("profiles in the directory", profiles)
+    if "globalLsh.pkl" in profiles:
+        with open(f"{dLakeProfilePath}\globalLSH.pkl") as f2:
+            globalLSH = pickle.load(f2)
     else:
         raise FileExistsError("Global LSH Index needs to be constructed")
     

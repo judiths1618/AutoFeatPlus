@@ -2,7 +2,7 @@ import glob
 
 import pandas as pd
 
-from feature_discovery.config import CONNECTIONS, DATA_FOLDER
+from feature_discovery.config import CONNECTIONS, DATA_FOLDER, DATA
 from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_all, profile_valentine_dataset, profile_LSH_all
 from feature_discovery.experiments.dataset_object import Dataset
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables, create_node
@@ -18,6 +18,8 @@ def ingest_unprocessed_data(dataset_folder_name: str = None):
 
     # Filter out connections.csv file
     files = [f for f in files if CONNECTIONS not in f and f.endswith("csv")]
+    print(f"Found {len(files)} files to ingest.", flush=True)
+
     mapping = {}
 
     for f in files:
@@ -48,16 +50,23 @@ def ingest_unprocessed_data(dataset_folder_name: str = None):
 def ingest_nodes(dataset_folder_name: str = None) -> None:
     print("Process the tables ...")
     # datafolder is the name of the dlake
+
+    print("Data Folder", DATA_FOLDER)
     if dataset_folder_name:
         files = glob.glob(f"{DATA_FOLDER / dataset_folder_name}/**/*.csv", recursive=True)
     else:
         files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
 
+
     for f in files:
         if "datasets.csv" in f:
             continue
-        table_path = f.partition(f"{DATA_FOLDER}/")[2]
+        # print("current file", f)
+        table_path = f.partition(f"{DATA_FOLDER}")[2].rstrip("/\\")
+        # print("partition path", table_path)
+        # print(f"Processing {table_path} ...", flush=True)
         table_name = table_path.split("/")[-1]
+        # print(f"Creating node for {table_name} with path {table_path} ...", flush=True)
         create_node(table_path, table_name)
 
 

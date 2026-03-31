@@ -74,15 +74,15 @@ def buildingEmbeddingInstProfile(file, dLake="default"):
             cols.append(c)
     
 
-    # embedding the instance set into a single embedding
-    model = SentenceTransformer("all-MiniLM-L6-v2")
-    for c in cols:
-        tempData = list(dataset[c].unique())
-        tempEmbeddings = model.encode(tempData)
-        finalEmbedding = tempEmbeddings.sum(axis=0)
-        collection.add({
-            id = 
-        })
+    # # embedding the instance set into a single embedding
+    # model = SentenceTransformer("all-MiniLM-L6-v2")
+    # for c in cols:
+    #     tempData = list(dataset[c].unique())
+    #     tempEmbeddings = model.encode(tempData)
+    #     finalEmbedding = tempEmbeddings.sum(axis=0)
+    #     collection.add({
+    #         id = 
+    #     })
         
     # This will be used as the IDs in the embedding db
     file_and_col = [f"{file}_{col}" for col in cols]
