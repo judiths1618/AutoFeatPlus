@@ -149,6 +149,8 @@ dmypy.json
 # /results/*
 /results_workshop/
 /results_*/*
+testing.ipynb
+testFile.ipynb
 
 # AutoGluon
 /AutogluonModels/*
