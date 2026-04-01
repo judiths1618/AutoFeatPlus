@@ -57,7 +57,7 @@ def ingest_nodes(dataset_folder_name: str = None) -> None:
     else:
         files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
 
-
+    
     for f in files:
         if "datasets.csv" in f:
             continue
@@ -68,6 +68,11 @@ def ingest_nodes(dataset_folder_name: str = None) -> None:
         table_name = table_path.split("/")[-1]
         # print(f"Creating node for {table_name} with path {table_path} ...", flush=True)
         create_node(table_path, table_name)
+
+
+def add_node(table_path):
+    table_name = table_path.split("/")[-1]
+    create_node(table_path, table_name)
 
 
 def ingest_data_with_pk_fk(dataset: Dataset, profile_valentine: bool = False, profile_LSH: bool=False, mix_datasets: bool = False):

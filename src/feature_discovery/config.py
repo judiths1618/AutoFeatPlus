@@ -10,7 +10,7 @@ ROOT_FOLDER = Path(
 CONNECTIONS = "connections.csv"
 
 
-DATASET_TYPE="6g_testbed_dataset"
+DATASET_TYPE="6g_testbed_dataset" / "EUR" / "6907619" / "newSplit" 
 # DATASET_TYPE = os.getenv("DATASET_TYPE", "benchmark")
 
 DATA = "data"

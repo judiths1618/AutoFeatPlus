@@ -137,7 +137,7 @@ class AutoFeat:
             logging.debug(f"New iteration with base node: {base_node_id}")
 
             # Determine the neighbours (unvisited)
-            neighbours = sorted(set(get_adjacent_nodes(base_node_id)) - set(self.discovered))
+            neighbours = sorted(set(get_adjacent_nodes(base_node_id, type="join")) - set(self.discovered))
             if len(neighbours) == 0:
                 continue
 
