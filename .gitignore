@@ -136,6 +136,7 @@ dmypy.json
 */**/.DS_Store
 /env/*
 /data/*
+/dataLakeProfiles/*
 /data/benchmark/*
 /data-split/*
 !/data/.keep

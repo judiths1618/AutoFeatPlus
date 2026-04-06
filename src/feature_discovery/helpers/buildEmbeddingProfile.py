@@ -2,11 +2,11 @@ import chromadb
 import numpy as np
 import pandas as pd
 import os
-from config import PROFILE
+from feature_discovery.config import PROFILE
 from sentence_transformers import SentenceTransformer
 
 
-def buildingEmbeddingSchemaProfile(file, dLake="default"):
+def buildingEmbeddingSchemaProfile(file, dLake="Global", model="all-MiniLM-L6-v2"):
 
     """
     Building the Vector database used for embedding the schemas of the tables
@@ -19,7 +19,7 @@ def buildingEmbeddingSchemaProfile(file, dLake="default"):
     """
 
     profilePath = f"{PROFILE}/embeddingProfiles/{dLake}"
-    client = chromadb.PersistentClient(path="./chroma_data")
+    client = chromadb.PersistentClient(path=profilePath)
 
     # if exists get, else create3
     collection = client.get_or_create_collection(
@@ -28,24 +28,23 @@ def buildingEmbeddingSchemaProfile(file, dLake="default"):
     )
 
     print(f"Starting to Profile the dataset {file}", flush=True)
-    dataset = pd.read_csv(file)
-    cols = []
-    for c in list(dataset.columns):
-        if dataset[c].dtype == 'string':
-            cols.append(c)
+    # only need to read the headers
+    dataset = pd.read_csv(file, nrows=10)
+    cols = list(dataset.columns)
 
     file_and_col = [f"{file}_{col}" for col in cols]
 
     #Using default embedding model
     # Need to create a parameter that will take in embedding model to chaneg the embedding model
     # This will require a 
-    colEmbeddings = collection.add(
+    collection.add(
         ids=file_and_col,
         documents = cols,
     )
 
 
-def buildingEmbeddingInstProfile(file, dLake="default"):
+
+def buildingEmbeddingInstProfile(file, dLake="Global", model="all-MiniLM-L6-v2"):
 
     """
     Building the Vector database used for embedding the schemas of the tables
@@ -62,8 +61,8 @@ def buildingEmbeddingInstProfile(file, dLake="default"):
 
     # if exists get, else create3
     collection = client.get_or_create_collection(
-        name=f"schena_set_{dLake}",
-        metadata={"description": f"Collection for data lake {dLake}"}
+        name=f"schema_inst_{dLake}",
+        metadata={"description": f"Collection for data lake {dLake} constructed using column embeddings from transformer models"}
     )
 
     print(f"Starting to Profile the dataset {file}", flush=True)
@@ -89,9 +88,23 @@ def buildingEmbeddingInstProfile(file, dLake="default"):
 
     #Using default embedding model
     # Need to create a parameter that will take in embedding model to chaneg the embedding model
-    # This will require a 
+    # This will require a
+    # 
+    aggEmbeddings = []
+    for col in cols:
+        tempData = list(dataset[col].unique())
+        aggEmbedding = aggEmbeddingFunction(tempData, model)
+        aggEmbeddings.append(aggEmbedding)
+    #  
     colEmbeddings = collection.add(
         ids=file_and_col,
-        documents = cols,
+        embeddings=aggEmbeddings,
     )
 
+    
+    def aggEmbeddingFunction(documents, model="all-MiniLM-L6-v2"):
+        model = SentenceTransformer(model)
+        output = model.encode(documents)
+        agg_output = np.sum(output, axis=0)
+        norm = np.linalg.norm(agg_output)  
+        return agg_output / norm

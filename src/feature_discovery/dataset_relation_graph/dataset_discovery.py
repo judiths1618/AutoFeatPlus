@@ -17,7 +17,9 @@ from feature_discovery.config import DATA_FOLDER,DATA, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 from datasketch import MinHash
 from feature_discovery.helpers.buildLSHProfile import buildingProfile, collectLshProfiles, repoChecker
+from feature_discovery.helpers.buildEmbeddingProfile import buildingEmbeddingSchemaProfile, buildingEmbeddingInstProfile
 import chromadb
+from feature_discovery.helpers.dataMetrics import cardinalityCount, cardinalityDF
 
 
 
@@ -71,6 +73,7 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
 
         #### Schema matching for unionable relations
         # Ran into memory error when computing instance-based matching on the whole dataset, so performing schema-based matching first to reduce the number of comparisons for instance-based matching
+        print("Performing schema-based matching ...", flush=True)
         schema_matches = valentine_match(df1, df2, schema_matcher)
         cols1 = set()
         cols2 = set()
@@ -83,10 +86,22 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
                 unionSchemas.add((col_from, col_to))
         cols1 = list(cols1)
         cols2 = list(cols2)        
+
+        # perform cardinaltiy Check
+        print("Performing cardinality check ...", flush=True)
+        cardinalityThresh = 0.5
+        for col in cols1:
+            cardinality1 = cardinalityCount(df1[col])
+            if cardinality1/len(df1) > cardinalityThresh:
+                cols1.remove(col)
+        for col in cols2:
+            cardinality2 = cardinalityCount(df2[col])
+            if cardinality2/len(df2) > cardinalityThresh:
+                cols2.remove(col)
+
+        print("Performing instance-based matching ...", flush=True)
         schemaMatchedDF1 = df1[cols1]
         schemaMatchedDF2 = df2[cols2]
-
-
         # instanance_matcher =  Coma(use_instances = True, java_xmx="256m") # use_instances=True enables instance-based matching
 
         # ##### perform instance check on unionable relations as joinable relations are a subset of unionable relations
@@ -117,6 +132,9 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
                                             weight=similarity,
                                             type="join")
                 
+
+
+        
         for pairs in joinableSchema:
             if pairs in unionSchemas:
                 unionSchemas.remove(pairs)
@@ -149,7 +167,7 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
 
 
 # offline compute
-def filterDLake(dLakePath):
+def filterDLakeLSH(dLakePath):
     """
     Filter as per datalake:
     Input: dLake - the datalake to filter for
@@ -178,6 +196,40 @@ def filterDLake(dLakePath):
         
     return -1
 
+def filterDLakeEmbedding(dLakePath):
+    """
+    Filter as per datalake:
+    Input: dLake - the datalake to filter for
+
+    Output: List of files to compute or -1 for nothing to compute
+    """
+
+    files = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+
+    client= chromadb.PersistentClientClient("dLakePath")
+    collection = client.get_or_create_collection(name=f"schema_{dLakePath}")
+
+    collections = collection.get(include=["ids"])["ids"]
+    fileNames = set([c.split("_")[0] for c in collections])
+
+    # print("data files", files, flush=True)
+    # print("profiles", dLakeFiles, flush=True)
+
+    # find existing files from the db ids and filter the datalake files to find files that have not been profiled yet
+    filesToProcess = []
+    print("filtering datalake files ...", flush=True)
+    for f in files:
+        fileName = f.partition(str(DATA_FOLDER))[-1].rstrip("/\\").lstrip("/\\").split("\\")[-1].split(".csv")[0]
+        # print("current file", fileName, flush=True)
+        if fileName == "datasets" or fileName == "splitSummary":
+            continue
+        if fileName.split(".csv")[0] not in fileNames:
+            filesToProcess.append(f)
+    if len(filesToProcess) > 0:
+        return filesToProcess
+        
+    return -1
+
 
 def profile_LSH_all(dLake = None, numPerms = 128, threshold=0.5):
     """ 
@@ -193,7 +245,7 @@ def profile_LSH_all(dLake = None, numPerms = 128, threshold=0.5):
         dLakePath = f"{PROFILE}/LSHPROFILES/{dLake}"
 
     repoChecker(dLakePath)
-    filterRes = filterDLake(dLakePath)
+    filterRes = filterDLakeLSH(dLakePath)
 
     # print("filterRes", filterRes)
 
@@ -229,7 +281,7 @@ def profileDataLakeLSH(dLake=None, numPerms = 128, threshold=0.5):
     Building the profiles of
     """
 
-    filterRes = filterDLake(dLake)
+    filterRes = filterDLakeLSH(dLake)
     if filterRes == -1:
         return 0
 
@@ -251,9 +303,7 @@ def profileDataLakeLSH(dLake=None, numPerms = 128, threshold=0.5):
         buildLSHDataLake(f, dLakeCollection[f])
                
     
-
 def buildLSHDataLake(hashes, dLake=None,  threshold=0.5):
-    
     import os
     import pickle
 
@@ -304,7 +354,6 @@ def insertBaseTableLSHIndex(filepath, dLake=None, numPerms=128, threshold=0.5):
 
     return is inserting the basetable into related join graph
     """
-
     if dLake is None:
         dLakeProfilePath = f"{PROFILE}/LSHProfiles/Global"
     else:
@@ -319,9 +368,7 @@ def insertBaseTableLSHIndex(filepath, dLake=None, numPerms=128, threshold=0.5):
 
     string_col_names = list(baseDF.select_dtypes(include=["object", "string"]).columns)
 
-
     # check if global lsh index exists
-
     baseTableMinHashCollection = {}
     for col in string_col_names:
         tempMinHash = MinHash(threshold=threshold, num_perm=numPerms)
@@ -359,8 +406,30 @@ def insertBaseTableLSHIndex(filepath, dLake=None, numPerms=128, threshold=0.5):
 
 
     
-def profileDataLakeEmbedding():
+def profileEmbeddingAll(dLake=None, inst=False, model="all-MiniLM-L6-v2"):
+    """
+    Build the embedding database for a specified datalake and insert the similarity-based connections into the relation graph
+    """
+    
+    if dLake is None:
+        dLakeProfilePath = f"{PROFILE}/embeddingProfiles/Global"
+    else:
+        dLakeProfilePath = f"{PROFILE}/embeddingProfiles/{dLake}"
 
+    repoChecker(dLakeProfilePath)
+
+    if not inst:
+        filterRes = filterDLakeEmbedding(dLakeProfilePath)
+        if filterRes == -1:
+            return 0
+        for f in tqdm(filterRes):
+            buildingEmbeddingSchemaProfile(f, dLake=dLake, model=model)
+        
     
 
+
+
+    dFiles = glob.glob(f"{DATA_FOLDER}/**/*.csv", recursive=True)
+    
     pass
+
