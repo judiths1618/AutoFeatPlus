@@ -297,7 +297,7 @@ def ingest_data_Embeddings(
     """
     ingest_nodes()
     if data_discovery_threshold and discover_connections_data_lake:
-        profile_LSH_all(threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
+        profile_embeddings_all(threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
         return
 
     if data_discovery_threshold and not discover_connections_data_lake:

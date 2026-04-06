@@ -33,6 +33,7 @@ def buildingEmbeddingSchemaProfile(file, dLake="Global", model="all-MiniLM-L6-v2
     cols = list(dataset.columns)
 
     file_and_col = [f"{file}_{col}" for col in cols]
+    colEmbeddings = buildEmbedding(cols, model=model)
 
     #Using default embedding model
     # Need to create a parameter that will take in embedding model to chaneg the embedding model
@@ -40,6 +41,7 @@ def buildingEmbeddingSchemaProfile(file, dLake="Global", model="all-MiniLM-L6-v2
     collection.add(
         ids=file_and_col,
         documents = cols,
+        embeddings = colEmbeddings
     )
 
 
@@ -102,9 +104,21 @@ def buildingEmbeddingInstProfile(file, dLake="Global", model="all-MiniLM-L6-v2")
     )
 
     
-    def aggEmbeddingFunction(documents, model="all-MiniLM-L6-v2"):
-        model = SentenceTransformer(model)
-        output = model.encode(documents)
-        agg_output = np.sum(output, axis=0)
-        norm = np.linalg.norm(agg_output)  
-        return agg_output / norm
+def aggEmbeddingFunction(documents, model="all-MiniLM-L6-v2"):
+    """
+    Get the aggregate embedding of documents using an embedding model
+    """
+    model = SentenceTransformer(model)
+    output = model.encode(documents)
+    agg_output = np.sum(output, axis=0)
+    norm = np.linalg.norm(agg_output)  
+    return agg_output / norm
+
+def buildEmbedding(documents, model="all-MiniLM-L6-v2"):
+    """
+    Get Embedding of the documents using a specific model using sentence transformers
+    """
+    model = SentenceTransformer(model)
+    output = model.encode(documents)
+    norm = np.linalg.norm(output, axis=1, keepdims=True)  
+    return output / norm
