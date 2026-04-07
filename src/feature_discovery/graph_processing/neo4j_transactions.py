@@ -37,7 +37,7 @@ def _execute_read(session, func: Callable[..., T], *args: Any, **kwargs: Any) ->
     return session.read_transaction(func, *args, **kwargs)  # type: ignore[attr-defined]
 
 
-def merge_nodes_relation_tables(a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, weight=1):
+def merge_nodes_relation_tables(a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, type, weight=1):
     with driver.session(database=NEO4J_DATABASE) as session:
         result = _execute_write(
             session,
@@ -49,6 +49,7 @@ def merge_nodes_relation_tables(a_table_name, b_table_name, a_table_path, b_tabl
             a_col,
             b_col,
             weight,
+            type
         )
     return result
 
@@ -80,14 +81,14 @@ def get_pk_fk_nodes(source_path):
     return result
 
 
-def get_adjacent_nodes(node_id) -> list:
+def get_adjacent_nodes(node_id, type) -> list:
     """
     Computes a list of adjacent node IDs.
     :param node_id: The ID of the node whose adjacent values to find
     :return: A list of node IDs.
     """
     with driver.session(database=NEO4J_DATABASE) as session:
-        result = _execute_read(session, _get_adjacent_nodes, node_id)
+        result = _execute_read(session, _get_adjacent_nodes, node_id, type)
     return result
 
 

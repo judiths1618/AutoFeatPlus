@@ -13,6 +13,7 @@ ALL_DATASETS = []
 def init_datasets():
     print("Initialising datasets ...")
     datasets_df = pd.read_csv(DATA_FOLDER / "datasets.csv")
+    # print("datasets df", datasets_df)
 
     for index, row in datasets_df.iterrows():
         dataset = Dataset(base_table_label=row["base_table_label"],

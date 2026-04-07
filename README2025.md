@@ -116,6 +116,8 @@ Wait 1 minute until the database becomes available.
 2. Create database `lake` in neo4j:
    1. Local development - It is necessary to follow the steps from [Neo4j Desktop setup](#neo4j-desktop-setup) beforehand.
    2. Docker - Go to [localhost:7474](localhost:7474) to access neo4j browser.
+   The default port will be 7474 for neo4j, need to change this in the config.py file to the available port that neo4j will be open on.
+
 
 Input in neo4j browser console: 
 ![neo4j-console.png](assets%2Fneo4j-console.png)
@@ -140,6 +142,8 @@ Wait 1 minute until the database becomes available.
 ```
 feature-discovery-cli ingest-data --data-discovery-threshold=0.55 --discover-connections-data-lake
 ```
+
+Change the discovery mechansim, and the memory parameter, ran into out of memory error so need to configure
 
 
 # 3. Experiments

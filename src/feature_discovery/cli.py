@@ -10,7 +10,7 @@ import typer
 from typing_extensions import Annotated
 
 from feature_discovery.config import RESULTS_FOLDER
-from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_dataset, profile_valentine_all
+from feature_discovery.dataset_relation_graph.dataset_discovery import profile_valentine_dataset, profile_valentine_all, profile_LSH_all, profileDataLakeEmbedding
 from feature_discovery.dataset_relation_graph.ingest_data import ingest_nodes, ingest_data_with_pk_fk
 from feature_discovery.experiments.init_datasets import ALL_DATASETS
 from feature_discovery.experiments.utils_dataset import filter_datasets
@@ -216,7 +216,6 @@ def ingest_kfk_data(
     for dataset in tqdm.tqdm(datasets):
         ingest_data_with_pk_fk(dataset=dataset, profile_valentine=discover_connections_dataset)
 
-
 @app.command()
 def ingest_data(
     data_discovery_threshold: Annotated[
@@ -240,8 +239,72 @@ def ingest_data(
         return
 
     if data_discovery_threshold and not discover_connections_data_lake:
+        # print('all datasets', ALL_DATASETS)
         for dataset in ALL_DATASETS:
             profile_valentine_dataset(dataset.base_table_label, valentine_threshold=data_discovery_threshold)
+
+@app.command()
+def ingest_data_LSH(
+    data_discovery_threshold: Annotated[
+        float,
+        typer.Option(
+            help="Run dataset discovery to find more connections within the entire data lake with given"
+            " accuracy rate threshold"
+        ),
+    ] = None,
+    data_discovery_permutations : Annotated[
+        int, typer.Option(help="Number of permutations to be used in MinHash Construction")
+    ] = 128,
+    discover_connections_data_lake: Annotated[
+        bool, typer.Option(help="Run dataset discovery to find more connections within the entire data lake")
+    ] = False,
+):
+    """
+    Ingest all dataset from specified "data" folder Using LSH for the similarity calculation.
+    Only applicable to join discovery over string data formats
+    """
+    ingest_nodes()
+    if data_discovery_threshold and discover_connections_data_lake:
+        profile_LSH_all(threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
+        return
+
+    if data_discovery_threshold and not discover_connections_data_lake:
+        for dataset in ALL_DATASETS:
+            profile_LSH_all(dLake = dataset.base_table_label, threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
+
+
+@app.command()
+def ingest_data_Embeddings(
+    model: Annotated[
+        str,
+        typer.Option(
+            help="The model to be used for the embeddings generation. The options are: [all-MiniLM-L6-v2, all-MiniLM-L12-v2, all-distilroberta-v1, all-mpnet-base-v2]"
+        ),
+    ] = "all-MiniLM-L6-v2",
+    data_discovery_threshold: Annotated[
+        float,
+        typer.Option(
+            help="The threshold to be used for thresholding the similarity search between embeddings"
+        ),
+    ] = 0.5,
+    discover_connections_data_lake: Annotated[
+        bool, typer.Option(help="Run dataset discovery to find more connections within the entire data lake")
+    ] = False,
+):
+    """
+    Ingest all dataset from specified "data" folder Using LSH for the similarity calculation.
+    Only applicable to join discovery over string data formats
+    """
+    ingest_nodes()
+    if data_discovery_threshold and discover_connections_data_lake:
+        profile_embeddings_all(threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
+        return
+
+    if data_discovery_threshold and not discover_connections_data_lake:
+        for dataset in ALL_DATASETS:
+            profile_LSH_all(dLake = dataset.base_table_label, threshold=data_discovery_threshold, numPerms=data_discovery_permutations)
+
+
 
 
 if __name__ == "__main__":

@@ -135,7 +135,8 @@ dmypy.json
 .idea
 */**/.DS_Store
 /env/*
-# /data/*
+/data/*
+/dataLakeProfiles/*
 /data/benchmark/*
 /data-split/*
 !/data/.keep
@@ -149,6 +150,8 @@ dmypy.json
 # /results/*
 /results_workshop/
 /results_*/*
+testing.ipynb
+testFile.ipynb
 
 # AutoGluon
 /AutogluonModels/*

@@ -1,8 +1,8 @@
-def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, weight):
+def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b_table_path, a_col, b_col, weight, type):
     tx_result = tx.run(
         "merge (a:Node {id: $a_table_path, label: $a_table_name}) "
         "merge (b:Node {id: $b_table_path, label: $b_table_name}) "
-        "merge (a)-[r:RELATED {from_column: $a_col, to_column: $b_col, from_label: $a_table_path, to_label: $b_table_path}]-(b) "
+        "merge (a)-[r:RELATED {from_column: $a_col, to_column: $b_col, from_label: $a_table_path, to_label: $b_table_path, type: $type}]-(b) "
         "on create set r.weight = $weight "
         "on match set r.weight = case when r.weight < $weight then $weight else r.weight end",
         a_table_path=a_table_path,
@@ -12,6 +12,7 @@ def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b
         a_col=a_col,
         b_col=b_col,
         weight=weight,
+        type=type
     )
 
     record = tx_result.single()
@@ -19,6 +20,11 @@ def _merge_nodes_relation_tables(tx, a_table_name, b_table_name, a_table_path, b
 
 
 def _get_relation_properties(tx, from_id, to_id):
+    """    Get the properties of the relation between two nodes.
+    :param from_id: The ID of the first node.
+    :param to_id: The ID of the second node.
+    """
+
     tx_result = tx.run(
         "match (n {id: $from_id})-[r:RELATED]-(m {id: $to_id}) return properties(r) as props",
         from_id=from_id,
@@ -31,6 +37,9 @@ def _get_relation_properties(tx, from_id, to_id):
 
 
 def _get_relation_properties_node_name(tx, from_id, to_id):
+    """
+    Return the properties of the relation between two nodes along with the node names ordered by the weight of the relation
+    """
     tx_result = tx.run(
         "match (n {id: $from_id})-[r:RELATED]-(m {id: $to_id}) return properties(r) as props, n.id as from_label, m.id as to_label order by r.weight desc",
         from_id=from_id,
@@ -43,6 +52,9 @@ def _get_relation_properties_node_name(tx, from_id, to_id):
 
 
 def _get_node_by_id(tx, node_id):
+    """
+    Return the node with the given ID.
+    """
     result = tx.run("match (n {id: $node_id}) return n as node", node_id=str(node_id))
     record = result.single()
     if not record:
@@ -51,6 +63,10 @@ def _get_node_by_id(tx, node_id):
 
 
 def _get_pk_fk_nodes(tx, source_path):
+    """
+    Get nodes that have perfect relations
+    Constructed from pk-fk relations in the dataset
+    """
     tx_result = tx.run(
         "match (n {id: $source_path})-[r:RELATED {weight: 1}]-(m) " "return n, m", source_path=str(source_path)
     )
@@ -61,10 +77,11 @@ def _get_pk_fk_nodes(tx, source_path):
     return values
 
 
-def _get_adjacent_nodes(tx, node_id):
+def _get_adjacent_nodes(tx, node_id, type):
     tx_result = tx.run(
-        "match (n:Node {id: $node_id})-[r]-(m:Node) with r, m order by r.weight desc return distinct m.id as id",
-        node_id=node_id
+        "match (n:Node {id: $node_id})-[r:RELATED {type: $type}]-(m:Node) with r, m order by r.weight desc return distinct m.id as id",
+        node_id=node_id,
+        type=type
     )
     values = []
     for record in tx_result:
