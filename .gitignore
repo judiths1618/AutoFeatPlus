@@ -135,7 +135,8 @@ dmypy.json
 .idea
 */**/.DS_Store
 /env/*
-# /data/*
+
+/6GDALI_Datasets/*
 /data/benchmark/*
 /data-split/*
 !/data/.keep

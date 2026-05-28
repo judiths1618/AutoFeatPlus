@@ -11,7 +11,7 @@ from feature_discovery.graph_processing.neo4j_queries import (
     _get_adjacent_nodes,
     _get_relation_properties_node_name,
     _export_all_connections,
-    _export_dataset_connections, _create_node,
+    _export_dataset_connections, _create_node, _clear_graph,
 )
 
 driver = GraphDatabase.driver(NEO4J_HOST, auth=NEO4J_CREDENTIALS)
@@ -101,6 +101,11 @@ def export_dataset_connections(dataset_label: str) -> List[dict]:
     with driver.session(database=NEO4J_DATABASE) as session:
         results = _execute_read(session, _export_dataset_connections, dataset_label)
     return results
+
+
+def clear_graph():
+    with driver.session(database=NEO4J_DATABASE) as session:
+        _execute_write(session, _clear_graph)
 
 
 def create_node(node_id, node_label):

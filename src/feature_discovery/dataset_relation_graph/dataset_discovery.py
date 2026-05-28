@@ -16,7 +16,7 @@ from valentine.algorithms import SimilarityFlooding
 from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 import datasketch
-from helpers.buildProfile import buildingProfile, collectLshProfiles
+from feature_discovery.helpers.buildProfile import buildingProfile, collectLshProfiles
 import chromadb
 
 

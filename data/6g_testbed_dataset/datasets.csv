@@ -1,2 +1,0 @@
-base_table_path,base_table_name,base_table_label,target_column,dataset_type
-EUR/6907619,rabbitmq-performance.csv,EUR/6907619,time,regression

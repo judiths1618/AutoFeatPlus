@@ -10,7 +10,7 @@ from feature_discovery.autofeat_pipeline.feature_selection import spearman_corre
 from feature_discovery.baselines.arda import select_arda_features_budget_join
 from feature_discovery.baselines.join_all import JoinAll
 from feature_discovery.experiments.dataset_object import Dataset, REGRESSION
-from feature_discovery.experiments.evaluation_algorithms import evaluate_all_algorithms
+from feature_discovery.experiments.evaluation_algorithms import evaluate_all_algorithms, _resolve_time_column
 from feature_discovery.experiments.init_datasets import init_datasets
 from feature_discovery.experiments.result_object import Result
 from feature_discovery.experiments.utils_dataset import filter_datasets
@@ -24,15 +24,20 @@ def join_all_bfs(dataset: Dataset, algorithm: str):
         target_column=dataset.target_column,
     )
     dataframe = joinall.join_all_bfs(queue={str(dataset.base_table_id)})
-    dataframe.drop(columns=joinall.join_keys[joinall.partial_join_name], inplace=True)
+    # Keep the temporal key (if any) so JOIN_ALL uses the same chronological split
+    # as BASE/AutoFeat; only drop the remaining join-key identifier columns.
+    time_column = _resolve_time_column(dataframe.columns, dataset.temporal_key)
+    drop_keys = [c for c in joinall.join_keys[joinall.partial_join_name] if c != time_column]
+    dataframe.drop(columns=drop_keys, inplace=True)
     end = time.time()
-    print(dataframe.shape)
+    logging.debug("Join-All BFS dataframe shape: %s", dataframe.shape)
 
     # Evaluate Join-All with all features
     results, df = evaluate_all_algorithms(dataframe=dataframe,
                                           target_column=dataset.target_column,
                                           problem_type=dataset.dataset_type,
-                                          algorithm=algorithm)
+                                          algorithm=algorithm,
+                                          time_column=dataset.temporal_key)
     for res in results:
         res.approach = Result.JOIN_ALL_BFS
         res.data_path = joinall.partial_join_name
@@ -51,12 +56,16 @@ def join_all_bfs(dataset: Dataset, algorithm: str):
     spearman_features = list(map(lambda x: x[0], sorted_features_scores))
     selected_features = spearman_features.copy()
     selected_features.append(dataset.target_column)
+    # Retain the temporal key so the filtered model splits on the same window.
+    if time_column and time_column not in selected_features:
+        selected_features.append(time_column)
     end_fs = time.time()
 
     results, _ = evaluate_all_algorithms(dataframe=dataframe[selected_features],
                                          target_column=dataset.target_column,
                                          problem_type=dataset.dataset_type,
-                                         algorithm=algorithm)
+                                         algorithm=algorithm,
+                                         time_column=dataset.temporal_key)
     for res in results:
         res.approach = Result.JOIN_ALL_BFS_F
         res.data_path = joinall.partial_join_name
@@ -129,7 +138,7 @@ def join_all(dataset: Dataset, algorithm: str):
             res.total_time += res.feature_selection_time
         all_results.extend(results)
 
-    print(f'Join-All results: {all_results}')
+    logging.debug("Join-All results: %s", all_results)
     return all_results
 
 
@@ -137,13 +146,14 @@ def non_augmented(dataframe: pd.DataFrame, dataset: Dataset, algorithm: str):
     results, _ = evaluate_all_algorithms(dataframe=dataframe,
                                          target_column=dataset.target_column,
                                          problem_type=dataset.dataset_type,
-                                         algorithm=algorithm)
+                                         algorithm=algorithm,
+                                         time_column=dataset.temporal_key)
     for res in results:
         res.approach = Result.BASE
         res.data_path = dataset.base_table_label
         res.data_label = dataset.base_table_label
 
-    print(f'Non-augmented results: {results}')
+    logging.debug("Non-augmented (BASE) results: %s", results)
     return results
 
 
@@ -182,7 +192,7 @@ def arda(dataset: Dataset, algorithm: str, sample_size: int):
         result.feature_selection_time = end - start
         result.total_time += result.feature_selection_time
 
-    print(f'ARDA results: {results}')
+    logging.debug("ARDA results: %s", results)
     return results
 
 

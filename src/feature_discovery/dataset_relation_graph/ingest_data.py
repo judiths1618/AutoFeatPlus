@@ -1,4 +1,6 @@
 import glob
+from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
@@ -61,13 +63,42 @@ def ingest_nodes(dataset_folder_name: str = None) -> None:
         create_node(table_path, table_name)
 
 
-def ingest_data_with_pk_fk(dataset: Dataset, profile_valentine: bool = False, profile_LSH: bool=False, mix_datasets: bool = False):
-    mapping = ingest_unprocessed_data(dataset.base_table_label)
+def ingest_data_with_pk_fk(
+    dataset: Dataset,
+    profile_valentine: bool = False,
+    profile_LSH: bool = False,
+    profile_transformer: bool = False,
+    mix_datasets: bool = False,
+    transformer_schema_threshold: float = 0.6,
+    transformer_value_threshold: float = 0.2,
+    transformer_model: str = "sentence-transformers/all-mpnet-base-v2",
+    metadata_path: Optional[Path] = None,
+    transformer_connections_csv: Optional[Path] = None,
+):
+    mapping = ingest_unprocessed_data(str(dataset.base_table_path))
 
     if profile_valentine and mix_datasets:
         profile_valentine_all()
     elif profile_valentine and not mix_datasets:
         profile_valentine_dataset(dataset.base_table_label)
+
+    if profile_transformer:
+        # Delayed import: keeps sentence-transformers an optional dependency.
+        from feature_discovery.dataset_relation_graph.transformer_discovery import (
+            profile_transformer_all,
+            profile_transformer_dataset,
+        )
+        common_kwargs = dict(
+            schema_threshold=transformer_schema_threshold,
+            value_threshold=transformer_value_threshold,
+            model_name=transformer_model,
+            metadata_path=metadata_path,
+            write_connections_csv=transformer_connections_csv,
+        )
+        if mix_datasets:
+            profile_transformer_all(**common_kwargs)
+        else:
+            profile_transformer_dataset(str(dataset.base_table_path), **common_kwargs)
 
     if profile_LSH and mix_datasets:
         profile_LSH_all()

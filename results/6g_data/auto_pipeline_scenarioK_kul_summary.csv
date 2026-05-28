@@ -1,0 +1,8 @@
+scenario,approach,algorithm,accuracy,rmse,mae,n_features,train_time,total_time,feature_selection_time,rank,top_k,join_name
+scenarioK_kul,BASE,XGBoost,0.0,0.0,0.0,0,0.0,0.0,0.0,0.0,0,
+scenarioK_kul,Join_All_BFS,XGBoost,1.0,0.0,0.0,0,5.715481758117676,5.995582818984985,0.0,0.0,0,
+scenarioK_kul,Join_All_BFS,RandomForest,1.0,0.0,0.0,0,5.715481758117676,5.995582818984985,0.0,0.0,0,
+scenarioK_kul,Join_All_BFS_Filter,XGBoost,1.0,0.0,0.0,0,2.3251330852508545,2.629305362701416,0.024071216583251953,0.0,0,
+scenarioK_kul,Join_All_BFS_Filter,RandomForest,1.0,0.0,0.0,0,2.3251330852508545,2.629305362701416,0.024071216583251953,0.0,0,
+scenarioK_kul,AutoFeat,XGBoost,1.0,0.0,0.0,15,0.4458649158477783,2.5296430587768555,2.083778142929077,1.73499415481723,15,scenarioK_kul/samples_base.csv--scenarioK_kul/samples_base.csv|sample_key|sample_key|scenarioK_kul/antenna_0_features.csv
+scenarioK_kul,AutoFeat,RandomForest,1.0,0.0,0.0,15,0.4458649158477783,2.5296430587768555,2.083778142929077,1.73499415481723,15,scenarioK_kul/samples_base.csv--scenarioK_kul/samples_base.csv|sample_key|sample_key|scenarioK_kul/antenna_0_features.csv

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -)",
+      "Bash(conda run -n autofeat-py3.10 python -c ':*)"
+    ]
+  }
+}

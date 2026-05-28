@@ -1,7 +1,8 @@
 from datasketch import MinHash, MinHashLSH
 import pandas as pd
 import pickle
-from config import PROFILE
+from pathlib import Path
+from feature_discovery.config import PROFILE
 
 def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
 
@@ -20,7 +21,7 @@ def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
         if dataset[c].dtype == 'string':
             cols.append(c)
 
-    lshIndex = MinHashLSH(threshold=threshold, numPerms=numPerms)
+    lshIndex = MinHashLSH(threshold=threshold, num_perm=numPerms)
     minHashcollection = {}
     for c in cols:
         tempMinHash = MinHash(num_perm=numPerms)
@@ -28,10 +29,12 @@ def buildingProfile(file, dlake="default", threshold=0.5, numPerms=128):
         for d in data:
             tempMinHash.update(d.encode('utf8'))
         minHashcollection[c] = tempMinHash        
-        lshIndex.insert(f"{file.encode("utf8")}_{c.encode("utf8")}", tempMinHash)
+        lshIndex.insert(f"{file}_{c}", tempMinHash)
 
 
-    with open(f"{PROFILE}\{dlake}\{file}.pkl", "wb") as f:
+    profile_path = Path(PROFILE) / dlake / f"{Path(file).name}.pkl"
+    profile_path.parent.mkdir(parents=True, exist_ok=True)
+    with profile_path.open("wb") as f:
         pickle.dump(lshIndex, f)
     
     print(f"Build LSH index for relevant cols of {file}")
@@ -44,20 +47,19 @@ def collectLshProfiles(dLake="default", threshold=0.5, numPerms=128):
     Merge all the individual LSHs
     """
 
-    import os
-    dPath = f"{PROFILE}\{dLake}"
+    dPath = Path(PROFILE) / dLake
 
     globalLsh = MinHashLSH(threshold=threshold, num_perm=numPerms)
 
-    files = os.listdir(dPath)
-
     # merge all of the LSH of files in datalake to produce a global index for the data lake
-    for f in files:
-        with open(f"{dPath}\{f}.pkl", "rb") as f1:
+    for profile_file in dPath.glob("*.pkl"):
+        if profile_file.name == "globalLSH.pkl":
+            continue
+        with profile_file.open("rb") as f1:
             tempLsh = pickle.load(f1)
     
         globalLsh = globalLsh.merge(tempLsh)
 
     
-    with open(f"{dPath}\globalLSH.pkl", "wb") as f2:
+    with (dPath / "globalLSH.pkl").open("wb") as f2:
         pickle.dump(globalLsh, f2)

@@ -2,14 +2,19 @@ import hashlib
 import logging
 import re
 from pathlib import Path
-from typing import Tuple, List
+from typing import Optional, Tuple, List
 
 import pandas as pd
 import tqdm
 
 from feature_discovery.autofeat_pipeline.autofeat import AutoFeat
-from feature_discovery.autofeat_pipeline.join_path_utils import get_path_length
-from feature_discovery.config import RESULTS_FOLDER
+from feature_discovery.autofeat_pipeline.join_path_utils import get_path_length, parse_join_step
+from feature_discovery.config import RESULTS_FOLDER, SEED
+from feature_discovery.dataset_introspection import (
+    detect_timestamp_unit,
+    parse_tolerance,
+    tolerance_to_seconds,
+)
 from feature_discovery.experiments.evaluation_algorithms import evaluate_all_algorithms
 from feature_discovery.experiments.init_datasets import ALL_DATASETS
 from feature_discovery.experiments.result_object import Result
@@ -65,12 +70,11 @@ def evaluate_paths(
         if join_name == bfs_result.base_table_id:
             continue
 
-        features = bfs_result.partial_join_selected_features[join_name]
+        features = list(bfs_result.partial_join_selected_features[join_name])
         features.append(bfs_result.target_column)
         features.extend(base_features)
+        features = list(dict.fromkeys(features))
         logging.debug(f"Feature before join_key removal:\n{features}")
-        # features = list((set(features) - set(bfs_result.join_keys[join_name])).intersection(set(dataframe.columns)))
-        # logging.debug(f"Feature after join_key removal:\n{features}")
 
         features_tables = [f"{feat.split('.csv')[0]}.csv" for feat in features]
         features_tables.sort()
@@ -78,9 +82,13 @@ def evaluate_paths(
 
         path_tables = {}
         for p in join_name.split("--"):
-            aux = p.split("-")
-            if len(aux) == 4:
-                path_tables[aux[3]] = (aux[0], aux[1], aux[2], aux[3])
+            if "|" not in p:
+                continue  # first segment is just the base table path, no join fields
+            try:
+                from_table, from_col, to_col, to_table = parse_join_step(p)
+                path_tables[to_table] = (from_table, from_col, to_col, to_table)
+            except ValueError:
+                continue
 
         path_list = []
         for table in features_tables:
@@ -91,7 +99,13 @@ def evaluate_paths(
                 continue
             path_list.append(path_aux)
 
-        dataframe = join_from_path(path_list, bfs_result.target_column, bfs_result.base_table_id)
+        dataframe = join_from_path(
+            path_list,
+            bfs_result.target_column,
+            bfs_result.base_table_id,
+            temporal_key=bfs_result.temporal_key,
+            temporal_tolerance=bfs_result.temporal_tolerance,
+        )
         features = list(set(features).intersection(set(dataframe.columns)))
 
         if len(features) < 2:
@@ -109,16 +123,53 @@ def evaluate_paths(
             augmented_dataframe.to_csv(augmented_path, index=False)
             logging.info("Saved augmented dataset for join '%s' to %s", join_name, augmented_path)
 
-        results, _ = evaluate_all_algorithms(dataframe=augmented_dataframe,
-                                             target_column=bfs_result.target_column,
-                                             problem_type=problem_type,
-                                             algorithm=algorithm)
+        # Detect the temporal column in the augmented dataframe for time-aware train/test split.
+        time_column = None
+        if bfs_result.temporal_key:
+            matches = [
+                c for c in augmented_dataframe.columns
+                if c == bfs_result.temporal_key or c.endswith(f".{bfs_result.temporal_key}")
+            ]
+            time_column = matches[0] if matches else None
+
+        results, _ = evaluate_all_algorithms(
+            dataframe=augmented_dataframe,
+            target_column=bfs_result.target_column,
+            problem_type=problem_type,
+            algorithm=algorithm,
+            time_column=time_column,
+        )
         for result in results:
             result.rank = rank
             result.data_path = path_list
+            result.join_name = join_name
         all_results.extend(results)
 
         dataframe = None
+
+    # Fallback: if no valid join path produced results, evaluate on base features only.
+    if not all_results:
+        logging.warning("evaluate_paths: no valid join paths found — falling back to base-table evaluation.")
+        try:
+            base_df, _ = get_df_with_prefix(bfs_result.base_table_id, bfs_result.target_column)
+            fallback_features = [f for f in base_features if f in base_df.columns]
+            if bfs_result.target_column not in fallback_features:
+                fallback_features.append(bfs_result.target_column)
+            if len(fallback_features) >= 2:
+                results, _ = evaluate_all_algorithms(
+                    dataframe=base_df[fallback_features],
+                    target_column=bfs_result.target_column,
+                    problem_type=problem_type,
+                    algorithm=algorithm,
+                )
+                for result in results:
+                    result.rank = 0
+                    result.data_path = [bfs_result.base_table_id]
+                    result.join_name = bfs_result.base_table_id
+                    result.approach = "BASE_FALLBACK"
+                all_results.extend(results)
+        except Exception as exc:
+            logging.error("evaluate_paths: base-table fallback also failed: %s", exc)
 
     return all_results, top_k_path_list
 
@@ -165,7 +216,19 @@ def evaluate_paths_from_file(filename: str, algorithm: str, top_k_paths: int = 1
     return all_results
 
 
-def join_from_path(path, target, base_node):
+def join_from_path(
+    path,
+    target,
+    base_node,
+    temporal_key: Optional[str] = None,
+    temporal_tolerance: int = 60,
+):
+    """Reconstruct the full joined dataframe from a join-path list.
+
+    Uses ``pd.merge_asof`` (nearest-timestamp) when the join column matches
+    *temporal_key*, matching the strategy used during feature discovery.
+    Falls back to an exact left-join for all other columns.
+    """
     join_path = ''
     step = 3
     joined_df = None
@@ -176,29 +239,67 @@ def join_from_path(path, target, base_node):
             if (i * step) + 1 == len(p):
                 continue
 
-            aux = ".".join([p[i], p[i + 1], p[i + 2], p[(i + 1) * step]])
+            current_idx = i * step
+            next_idx = (i + 1) * step
+            aux = ".".join([p[current_idx], p[current_idx + 1], p[current_idx + 2], p[next_idx]])
             if aux in join_path:
                 continue
 
-            if p[i * step] not in join_path:
-                if p[i * step] == base_node:
-                    left_table, _ = get_df_with_prefix(p[i * step], target)
+            if p[current_idx] not in join_path:
+                if p[current_idx] == base_node:
+                    left_table, _ = get_df_with_prefix(p[current_idx], target)
                 else:
-                    left_table, _ = get_df_with_prefix(p[i * step])
+                    left_table, _ = get_df_with_prefix(p[current_idx])
             else:
                 left_table = joined_df
 
-            right_table, _ = get_df_with_prefix(p[(i + 1) * step])
-            to_column = f"{p[(i + 1) * step]}.{p[i * step + 2]}"
-            right_table = right_table.groupby(to_column).sample(n=1, random_state=42)
+            right_table, _ = get_df_with_prefix(p[next_idx])
+            to_column = f"{p[next_idx]}.{p[current_idx + 2]}"
+            right_table = right_table.groupby(to_column).sample(n=1, random_state=SEED)
 
-            joined_df = pd.merge(
-                left_table,
-                right_table,
-                how="left",
-                left_on=f"{p[i * step]}.{p[i * step + 1]}",
-                right_on=f"{p[(i + 1) * step]}.{p[i * step + 2]}",
-            )
+            left_on = f"{p[current_idx]}.{p[current_idx + 1]}"
+            right_on = f"{p[next_idx]}.{p[current_idx + 2]}"
+            bare_from_col = p[current_idx + 1]
+
+            if temporal_key and bare_from_col == temporal_key:
+                # Nearest-timestamp join — mirrors the discovery phase
+                left_sorted = left_table.sort_values(left_on).reset_index(drop=True)
+                right_sorted = right_table.sort_values(right_on).reset_index(drop=True)
+                # Resolve tolerance for merge_asof, mirroring the discovery phase.
+                # temporal_tolerance may arrive as an int or a string like "60s";
+                # tolerance=0 means exact match, a negative amount means no limit.
+                try:
+                    amount, unit = parse_tolerance(temporal_tolerance)
+                except (ValueError, TypeError):
+                    amount, unit = -1, "s"
+                key_series = left_sorted[left_on]
+                if amount < 0:
+                    tolerance = None
+                elif pd.api.types.is_datetime64_any_dtype(key_series):
+                    tolerance = pd.Timedelta(seconds=tolerance_to_seconds(amount, unit))
+                else:
+                    col_unit = detect_timestamp_unit(key_series) or "s"
+                    tol_seconds = tolerance_to_seconds(amount, unit)
+                    tolerance = tol_seconds * {"s": 1, "ms": 1e3, "us": 1e6, "ns": 1e9}.get(col_unit, 1)
+                    # merge_asof rejects a float tolerance against an integer key.
+                    if pd.api.types.is_integer_dtype(key_series):
+                        tolerance = int(round(tolerance))
+                joined_df = pd.merge_asof(
+                    left_sorted,
+                    right_sorted,
+                    left_on=left_on,
+                    right_on=right_on,
+                    tolerance=tolerance,
+                    direction="nearest",
+                )
+            else:
+                joined_df = pd.merge(
+                    left_table,
+                    right_table,
+                    how="left",
+                    left_on=left_on,
+                    right_on=right_on,
+                )
 
             join_path += aux
 

@@ -7,6 +7,7 @@ from typing import Dict, Set, Tuple, Optional
 
 import pandas as pd
 
+from feature_discovery.config import SEED
 from feature_discovery.autofeat_pipeline.join_data import join_and_save
 from feature_discovery.autofeat_pipeline.join_path_utils import compute_join_name
 from feature_discovery.graph_processing.neo4j_transactions import get_adjacent_nodes, get_relation_properties_node_name
@@ -140,6 +141,9 @@ class JoinAll:
 
     def join_all_bfs(self, queue: set) -> pd.DataFrame:
         if len(queue) == 0:
+            # Base table was never joined to anything — return the in-memory partial join.
+            if self.partial_join_name not in self.join_name_mapping:
+                return self.partial_join
             previous_join = pd.read_csv(
                 Path(self.temp_dir.name) / self.join_name_mapping[self.partial_join_name],
                 header=0,
@@ -148,9 +152,6 @@ class JoinAll:
                 quotechar='"',
                 escapechar='\\',
             )
-            # previous_join = pd.read_parquet(
-            #     Path(self.temp_dir.name) / self.join_name_mapping[self.partial_join_name],
-            # )
             return previous_join
 
         # Iterate through all the elements of the queue:
@@ -371,7 +372,7 @@ class JoinAll:
         join_prop, from_table, to_table = join_key_properties
 
         # Step - Sample neighbour data - Transform to 1:1 or M:1
-        sampled_right_df = right_df.groupby(f"{right_label}.{join_prop['to_column']}").sample(n=1, random_state=42)
+        sampled_right_df = right_df.groupby(f"{right_label}.{join_prop['to_column']}").sample(n=1, random_state=SEED)
 
         # File naming convention as the filename can be gigantic
         join_filename = f"join_BFS_{str(uuid.uuid4())}.csv"

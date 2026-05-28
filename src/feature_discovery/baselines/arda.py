@@ -6,17 +6,11 @@ from typing import List
 import numpy as np
 import pandas as pd
 import tqdm as tqdm
-from autogluon.features.generators import AutoMLPipelineFeatureGenerator
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.model_selection import train_test_split
 
 from feature_discovery.autofeat_pipeline.join_path_utils import compute_join_name
 from feature_discovery.config import DATA_FOLDER
-from feature_discovery.graph_processing.neo4j_transactions import (
-    get_relation_properties_node_name,
-    get_adjacent_nodes,
-    get_node_by_id,
-)
 
 logging.getLogger().setLevel(logging.WARNING)
 
@@ -205,6 +199,13 @@ def wrapper_algo(
 def select_arda_features_budget_join(
         base_node_id: str, target_column: str, sample_size: int, regression: bool = False
 ):
+    from autogluon.features.generators import AutoMLPipelineFeatureGenerator
+    from feature_discovery.graph_processing.neo4j_transactions import (
+        get_relation_properties_node_name,
+        get_adjacent_nodes,
+        get_node_by_id,
+    )
+
     random_state = 42
     final_selected_features = []
     all_columns = []

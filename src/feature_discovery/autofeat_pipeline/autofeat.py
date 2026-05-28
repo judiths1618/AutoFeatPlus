@@ -8,7 +8,8 @@ import pandas as pd
 from autogluon.features.generators import AutoMLPipelineFeatureGenerator
 
 
-from feature_discovery.autofeat_pipeline.join_data import join_and_save
+from feature_discovery.config import SEED
+from feature_discovery.autofeat_pipeline.join_data import join_and_save, temporal_join_and_save
 from feature_discovery.autofeat_pipeline.join_path_feature_selection import RelevanceRedundancy
 from feature_discovery.autofeat_pipeline.join_path_utils import compute_join_name
 from feature_discovery.experiments.dataset_object import CLASSIFICATION
@@ -38,12 +39,18 @@ class AutoFeat:
         jmi: bool = False,
         no_relevance: bool = False,
         no_redundancy: bool = False,
+        temporal_key: Optional[str] = None,
+        temporal_tolerance: int = 60,
     ):
         """
 
         :param base_table_label: The name (label) of the base table to be used for saving data.
         :param target_column: Target column containing the class labels for training.
         :param value_ratio: Pruning threshold. It represents the ration between the number of non-null values in a column and the total number of values.
+        :param temporal_key: Column name used as a Unix-timestamp join key.  When set,
+            step_join uses pd.merge_asof (nearest-timestamp) instead of exact merge.
+        :param temporal_tolerance: Maximum allowed time difference in seconds for
+            temporal joins (0 = exact match, ignored when temporal_key is None).
         """
         self.base_table_label: str = base_table_label
         self.target_column: str = target_column
@@ -61,6 +68,8 @@ class AutoFeat:
 
         self.ranking: Dict[str, float] = {}
         self.join_keys: Dict[str, list] = {}
+        self.temporal_key: Optional[str] = temporal_key
+        self.temporal_tolerance: int = temporal_tolerance
         self.rel_red = RelevanceRedundancy(target_column, jmi=jmi, pearson=pearson)
         self.temp_dir = tempfile.TemporaryDirectory()
         if use_polars and not POLARS_AVAILABLE:
@@ -79,7 +88,6 @@ class AutoFeat:
 
         # Whether to save the joins to disk or not
         self.save_joins_to_disk = save_joins_to_disk
-        self.iters = 0
         if self.save_joins_to_disk is not True:
             self.joins_to_df: Dict[str, pd.DataFrame] = {}
         else:
@@ -100,10 +108,10 @@ class AutoFeat:
                     base_table_df,
                     train_size=self.sample_size,
                     stratify=base_table_df[self.target_column],
-                    random_state=42,
+                    random_state=SEED,
                 )
             else:
-                X_train, X_test = train_test_split(base_table_df, train_size=self.sample_size, random_state=42)
+                X_train, X_test = train_test_split(base_table_df, train_size=self.sample_size, random_state=SEED)
         else:
             X_train = base_table_df
 
@@ -171,7 +179,10 @@ class AutoFeat:
                     previous_join = None
                     if previous_join_name == self.base_table_id:
                         previous_join_name = self.base_table_id
-                        previous_join = self.partial_join.copy()
+                        if POLARS_AVAILABLE and isinstance(self.partial_join, pl.DataFrame):
+                            previous_join = self.partial_join.clone()
+                        else:
+                            previous_join = self.partial_join.copy()
                     else:
                         filename_key = self.join_name_mapping[previous_join_name]
                         if self.save_joins_to_disk:
@@ -180,10 +191,6 @@ class AutoFeat:
                             )
                         else:
                             previous_join = self.joins_to_df[filename_key]
-                            # del self.joins_to_df[filename_key]
-
-                    # self.iters += 1
-                    # print(self.iters)
 
                     # The current node can only be joined through the base node.
                     # If the base node doesn't exist in the previous join path, the join can't be performed
@@ -214,15 +221,11 @@ class AutoFeat:
 
                         if joined_df is None:
                             current_queue.add(previous_join_name)
-                            if not self.save_joins_to_disk:
-                                self.joins_to_df[join_filename] = joined_df
                             continue
 
                         data_quality = self.step_data_quality(join_key_properties=prop, joined_df=joined_df)
                         if not data_quality:
                             current_queue.add(previous_join_name)
-                            if not self.save_joins_to_disk:
-                                self.joins_to_df[join_filename] = joined_df
                             continue
 
                         result = self.streaming_relevance_redundancy(
@@ -232,13 +235,14 @@ class AutoFeat:
                         )
                         if result is not None:
                             self.ranking[join_name] = result[0]
-                            all_selected_features = self.partial_join_selected_features[previous_join_name]
+                            all_selected_features = list(self.partial_join_selected_features[previous_join_name])
                             all_selected_features.extend(result[1])
-                            self.partial_join_selected_features[join_name] = all_selected_features
+                            # Keep feature state isolated per join path.
+                            self.partial_join_selected_features[join_name] = list(dict.fromkeys(all_selected_features))
                         else:
-                            self.partial_join_selected_features[join_name] = self.partial_join_selected_features[
-                                previous_join_name
-                            ]
+                            self.partial_join_selected_features[join_name] = list(
+                                self.partial_join_selected_features[previous_join_name]
+                            )
 
                         join_columns.extend(self.join_keys[previous_join_name])
                         self.join_keys[join_name] = join_columns
@@ -257,7 +261,7 @@ class AutoFeat:
     ) -> Optional[Tuple[float, List[dict]]]:
         df = AutoMLPipelineFeatureGenerator(
             enable_text_special_features=False, enable_text_ngram_features=False
-        ).fit_transform(X=dataframe, random_state=42, random_seed=42)
+        ).fit_transform(X=dataframe, random_state=SEED, random_seed=SEED)
 
         X = df.drop(columns=[self.target_column])
         y = df[self.target_column]
@@ -282,16 +286,25 @@ class AutoFeat:
         sum_o = 0
         o = 1
         if not self.no_redundancy:
-            feature_score_redundancy = self.rel_red.measure_redundancy(
-                dataframe=X, selected_features=selected_features, relevant_features=relevant_features, target_column=y
-            )
+            # Only compute redundancy against features that survived preprocessing.
+            # If no prior features exist in the transformed space (e.g. the base
+            # table contained only identifier columns that were dropped), skip
+            # the redundancy step entirely — all relevant features are accepted.
+            active_selected = [f for f in selected_features if f in X.columns]
+            if not active_selected:
+                sum_o = sum_m
+                o = m
+            else:
+                feature_score_redundancy = self.rel_red.measure_redundancy(
+                    dataframe=X, selected_features=active_selected, relevant_features=relevant_features, target_column=y
+                )
 
-            if len(feature_score_redundancy) == 0:
-                return None
+                if len(feature_score_redundancy) == 0:
+                    return None
 
-            o = len(feature_score_redundancy) if feature_score_redundancy else o
-            sum_o = sum(list(map(lambda x: x[1], feature_score_redundancy)))
-            final_features = list(dict(feature_score_redundancy).keys())
+                o = len(feature_score_redundancy) if feature_score_redundancy else o
+                sum_o = sum(list(map(lambda x: x[1], feature_score_redundancy)))
+                final_features = list(dict(feature_score_redundancy).keys())
 
         score = (o * sum_m + m * sum_o) / (m * o)
 
@@ -307,34 +320,66 @@ class AutoFeat:
         logging.debug("\tSTEP Join ... ")
         join_prop, from_table, to_table = join_key_properties
 
-        # Step - Sample neighbour data - Transform to 1:1 or M:1
+        left_on = f"{from_table}.{join_prop['from_column']}"
+        right_on = f"{to_table}.{join_prop['to_column']}"
+
+        # The graph stores bare column names in join_prop['from_column']; we
+        # match it directly against the user-supplied temporal_key.
+        is_temporal = (
+            self.temporal_key is not None
+            and join_prop['from_column'] == self.temporal_key
+        )
+
+        # Step - Sample neighbour data - Transform to 1:1 or M:1.
+        # Skip for temporal joins: merge_asof already picks the nearest row,
+        # and random sampling within a timestamp group can discard the actual
+        # nearest neighbour.
         sampled_right_df = right_df
-        if self.sample_data_step:
+        if self.sample_data_step and not is_temporal:
             if self.use_polars:
                 right_df_pl = pl.from_pandas(right_df)
                 sampled_right_df = right_df_pl.filter(
-                    pl.int_range(0, pl.count()).shuffle(seed=42).over(f"{right_label}.{join_prop['to_column']}") < 1
+                    pl.int_range(0, pl.count()).shuffle(seed=SEED).over(f"{right_label}.{join_prop['to_column']}") < 1
                 )
             else:
                 sampled_right_df = right_df.groupby(f"{right_label}.{join_prop['to_column']}").sample(
-                    n=1, random_state=42
+                    n=1, random_state=SEED
                 )
 
         # File naming convention as the filename can be gigantic
         join_filename = f"{self.base_table_label}_join_BFS_{self.value_ratio}_{str(uuid.uuid4())}.parquet"
+        join_path = Path(self.temp_dir.name) / join_filename
 
-        # Join
-        left_on = f"{from_table}.{join_prop['from_column']}"
-        right_on = f"{to_table}.{join_prop['to_column']}"
-        joined_df = join_and_save(
-            left_df=pl.from_pandas(left_df) if self.use_polars else left_df,
-            right_df=sampled_right_df,
-            left_column_name=left_on,
-            right_column_name=right_on,
-            join_path=Path(self.temp_dir.name) / join_filename,
-            csv=False,
-            save_to_disk=self.save_joins_to_disk,
-        )
+        if is_temporal:
+            # Temporal nearest-neighbour join — Polars not yet supported here
+            left_pd = left_df.to_pandas() if POLARS_AVAILABLE and isinstance(left_df, pl.DataFrame) else left_df
+            right_pd = sampled_right_df.to_pandas() if POLARS_AVAILABLE and isinstance(sampled_right_df, pl.DataFrame) else sampled_right_df
+            joined_df = temporal_join_and_save(
+                left_df=left_pd,
+                right_df=right_pd,
+                left_column_name=left_on,
+                right_column_name=right_on,
+                join_path=join_path,
+                tolerance_s=self.temporal_tolerance,
+                csv=False,
+                save_to_disk=self.save_joins_to_disk,
+            )
+        else:
+            # Normalize left_df to polars when use_polars is enabled. left_df
+            # may arrive as pandas (loaded from parquet) or polars (first
+            # iteration from self.partial_join), so guard both cases.
+            if self.use_polars and POLARS_AVAILABLE and isinstance(left_df, pd.DataFrame):
+                left_df = pl.from_pandas(left_df)
+            joined_df = join_and_save(
+                left_df=left_df,
+                right_df=sampled_right_df,
+                left_column_name=left_on,
+                right_column_name=right_on,
+                join_path=join_path,
+                csv=False,
+                save_to_disk=self.save_joins_to_disk,
+            )
+
         if joined_df is None:
             return None, join_filename, []
 

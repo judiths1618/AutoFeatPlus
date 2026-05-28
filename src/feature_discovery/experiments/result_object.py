@@ -8,6 +8,8 @@ class Result:
     TFD = "AutoFeat"
     TFD_REL = "AutoFeat_Rel"
     TFD_RED = "AutoFeat_Red"
+    AUTOFEAT_PLUS = "AutoFeatPlus"
+    AUTOFEAT_PLUS_LOCAL = "AutoFeatPlus_Local"
     TFD_Pearson = "AutoFeat-Pearson-MRMR"
     TFD_Pearson_JMI = "AutoFeat-Pearson-JMI"
     TFD_JMI = "AutoFeat-Spearman-JMI"
@@ -29,6 +31,8 @@ class Result:
     feature_selection_time: float = 0.0
     depth: int = 0
     accuracy: float = 0.0
+    rmse: float = 0.0
+    mae: float = 0.0
     train_time: float = 0.0
     feature_importance: Dict[str, float] = field(default_factory=dict)
     join_path_features: List[str] = field(default_factory=list)
@@ -36,6 +40,14 @@ class Result:
     redundancy_threshold: float = 0.0
     rank: int = 0
     top_k: int = 0
+    n_features: int = 0
+    privacy_risk_score: float = 0.0
+    n_sensitive_features: int = 0
+    sensitive_features: List[str] = field(default_factory=list)
+    blocked_features: List[str] = field(default_factory=list)
+    join_name: str = ""
+    split_mode: str = ""
+    test_groups: str = ""
 
     def __post_init__(self):
         self.total_time += self.join_time + self.train_time + self.feature_selection_time

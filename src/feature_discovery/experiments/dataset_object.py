@@ -5,12 +5,16 @@ import pandas as pd
 
 
 CLASSIFICATION = "binary"
+MULTICLASS = "multiclass"
 REGRESSION = "regression"
+
+_VALID_DATASET_TYPES = {CLASSIFICATION, MULTICLASS, REGRESSION}
 
 
 class Dataset:
     def __init__(self, base_table_path: Path, base_table_name: str, base_table_label: str, target_column: str,
-                 dataset_type: bool, base_table_features: Optional[List] = None):
+                 dataset_type: str, base_table_features: Optional[List] = None,
+                 temporal_key: Optional[str] = None, temporal_tolerance: int = 60):
         self.base_table_path = base_table_path
         self.target_column = target_column
         self.base_table_name = base_table_name
@@ -18,10 +22,16 @@ class Dataset:
         self.base_table_label = base_table_label
         self.base_table_features = base_table_features
         self.base_table_df = None
+        # Temporal join settings (None = use exact join)
+        self.temporal_key: Optional[str] = temporal_key
+        self.temporal_tolerance: int = temporal_tolerance
 
-        if dataset_type == "regression":
+        if dataset_type == REGRESSION:
             self.dataset_type = REGRESSION
+        elif dataset_type == MULTICLASS:
+            self.dataset_type = MULTICLASS
         else:
+            # Legacy fall-through: anything non-regression/non-multiclass is binary.
             self.dataset_type = CLASSIFICATION
 
     def set_features(self):

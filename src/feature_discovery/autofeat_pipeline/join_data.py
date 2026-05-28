@@ -62,11 +62,6 @@ def pl_outer_join(
     left_tmp = f"{left_on}_tmp"
     right_tmp = f"{right_on}_tmp"
 
-    # Debug logging (optional)
-    print(f"[pl_outer_join] df1.columns: {df1.columns}")
-    print(f"[pl_outer_join] df2.columns: {df2.columns}")
-    print(f"[pl_outer_join] Join on: {left_on} == {right_on}")
-
     # --- Check that join keys exist ---
     if left_on not in df1.columns:
         raise ValueError(f"[pl_outer_join] Column '{left_on}' not found in left_df.")
@@ -129,6 +124,106 @@ def join_and_save(
         )
     else:
         raise Exception("Unknown dataframe type")
+
+    if save_to_disk:
+        join_path.parent.mkdir(parents=True, exist_ok=True)
+        if csv:
+            partial_join.to_csv(join_path, index=False)
+        else:
+            partial_join.to_parquet(join_path, index=False)
+
+    return partial_join
+
+
+def temporal_join_and_save(
+    left_df: pd.DataFrame,
+    right_df: pd.DataFrame,
+    left_column_name: str,
+    right_column_name: str,
+    join_path: Path,
+    tolerance_s=60,
+    csv: bool = True,
+    save_to_disk: bool = True,
+    direction: str = "nearest",
+) -> pd.DataFrame or None:  # type: ignore
+    """
+    Asof-join two frames on a temporal key.
+
+    Generalised for arbitrary time-series data:
+      - String timestamps (ISO format) auto-parsed to datetime64.
+      - Numeric keys auto-detected (Unix s / ms / us / ns) and tolerance is
+        converted to the same unit as the column.
+      - ``tolerance_s`` accepts an int/float (seconds, legacy) OR a string like
+        ``"60s"``, ``"5min"``, ``"1h"``, ``"200ms"``. Negative or None disables.
+      - ``direction`` is forwarded to ``pd.merge_asof``: ``"nearest"`` (default,
+        safe for static analysis), ``"backward"`` (only past events — required
+        for forecasting to avoid look-ahead leakage), or ``"forward"``.
+
+    :return: Augmented DataFrame, or None if dtypes are incompatible or both
+        sides are empty after cleaning.
+    """
+    from feature_discovery.dataset_introspection import (
+        parse_tolerance, tolerance_to_seconds, detect_timestamp_unit,
+    )
+
+    if direction not in ("nearest", "backward", "forward"):
+        raise ValueError(f"direction must be one of nearest|backward|forward, got {direction}")
+
+    # Coerce string timestamps to datetime64 on both sides (matched format only).
+    left = left_df.copy()
+    right = right_df.copy()
+    for df, col in [(left, left_column_name), (right, right_column_name)]:
+        if df[col].dtype == object:
+            try:
+                df[col] = pd.to_datetime(df[col], errors="raise")
+            except (ValueError, TypeError):
+                # Not parseable as datetime; let dtype-mismatch check below handle.
+                pass
+
+    if left[left_column_name].dtype != right[right_column_name].dtype:
+        return None
+
+    left_clean = left.dropna(subset=[left_column_name])
+    right_clean = right.dropna(subset=[right_column_name])
+    if left_clean.empty or right_clean.empty:
+        return None
+
+    left_sorted = left_clean.sort_values(left_column_name).reset_index(drop=True)
+    right_sorted = right_clean.sort_values(right_column_name).reset_index(drop=True)
+
+    # Resolve tolerance into a value pandas.merge_asof will accept.
+    if tolerance_s is None:
+        tolerance = None
+    else:
+        try:
+            amount, unit = parse_tolerance(tolerance_s)
+        except ValueError:
+            tolerance = None
+            amount = -1
+        else:
+            if amount < 0:
+                tolerance = None
+            elif pd.api.types.is_datetime64_any_dtype(left_sorted[left_column_name]):
+                # datetime64 → Timedelta in any unit
+                tolerance = pd.Timedelta(seconds=tolerance_to_seconds(amount, unit))
+            else:
+                # Numeric key — match tolerance to the column's timestamp unit
+                col_unit = detect_timestamp_unit(left_sorted[left_column_name]) or "s"
+                tol_seconds = tolerance_to_seconds(amount, unit)
+                tolerance = tol_seconds * {"s": 1, "ms": 1e3, "us": 1e6, "ns": 1e9}.get(col_unit, 1)
+                # merge_asof rejects a float tolerance against an integer key
+                # (e.g. tolerance=0.0 on an int64 `time` column), so coerce to int.
+                if pd.api.types.is_integer_dtype(left_sorted[left_column_name]):
+                    tolerance = int(round(tolerance))
+
+    partial_join = pd.merge_asof(
+        left_sorted,
+        right_sorted,
+        left_on=left_column_name,
+        right_on=right_column_name,
+        tolerance=tolerance,
+        direction=direction,
+    )
 
     if save_to_disk:
         join_path.parent.mkdir(parents=True, exist_ok=True)

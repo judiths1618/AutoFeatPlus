@@ -116,6 +116,10 @@ def _parse_records(tx_results):
     return values
 
 
+def _clear_graph(tx):
+    tx.run("MATCH (n) DETACH DELETE n")
+
+
 def _create_node(tx, a_table_path, a_table_name):
     tx_result = tx.run(
         "MERGE (a:Node {id: $a_table_path, label: $a_table_name}) return a",
