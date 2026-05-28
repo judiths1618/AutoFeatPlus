@@ -8,7 +8,7 @@ Plumbing:
   train         — train a downstream model (off-DAG handoff)
 
 Save under `dags/` of your Airflow deployment. The Airflow worker must have:
-  - the `feature-discovery` package installed (`pip install -e .`)
+  - the project's dependencies installed (`pip install -r requirements.txt`) with `src/` on `PYTHONPATH`
   - Neo4j reachable at the location set in `feature_discovery.config.NEO4J_HOST`
 """
 

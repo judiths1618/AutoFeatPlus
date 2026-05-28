@@ -63,8 +63,9 @@ Use Python 3.10 for the full AutoGluon/Darts stack.
 conda create -n autofeat-6g python=3.10 -y
 conda activate autofeat-6g
 
-pip install -e .
+pip install -r requirements.txt
 pip install --no-deps "setuptools<81"
+export PYTHONPATH=src   # or prefix commands with PYTHONPATH=src
 ```
 
 `setuptools<81` is needed because AutoGluon 1.3 imports `pkg_resources`.
@@ -453,7 +454,7 @@ Bridge utility:
 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
-| `ModuleNotFoundError: feature_discovery` | Package not installed | Run `pip install -e .` or prefix commands with `PYTHONPATH=src` |
+| `ModuleNotFoundError: feature_discovery` | `src/` not on Python path | `pip install -r requirements.txt` then prefix commands with `PYTHONPATH=src` (or `export PYTHONPATH=src`) |
 | AutoGluon trains no models / `pkg_resources` error | `setuptools` too new | `pip install --no-deps "setuptools<81"` |
 | `Unable to retrieve routing information` | Neo4j routing URI against local single instance | Use `bolt://localhost:7687`; start with `docker-compose up -d neo4j` |
 | `streamlit: command not found` | Dashboard dependency missing | `pip install streamlit` in the active env |

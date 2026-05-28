@@ -1,6 +1,5 @@
 #
-datasets/KUL
-datasets/DeepSense
+results
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -140,7 +139,6 @@ dmypy.json
 */**/.DS_Store
 /env/*
 
-/6GDALI_Datasets/*
 /data/benchmark/*
 /data-split/*
 !/data/.keep
