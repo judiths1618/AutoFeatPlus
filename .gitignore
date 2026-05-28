@@ -1,3 +1,7 @@
+#
+datasets/KUL
+datasets/DeepSense
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -158,4 +162,18 @@ dmypy.json
 neo4j-data/
 paths_*.csv
 tfd/*
-*nohup*.out
+*nohup*.out.DS_Store
+data/
+datasets/
+*.zip
+*.tar
+*.tar.gz
+*.csv
+*.mat
+*.pt
+*.pth
+*.pkl
+*.h5
+*.npy
+*.npz
+
