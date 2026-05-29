@@ -26,6 +26,49 @@ DEFAULT_SENSITIVE_PATTERNS = (
 )
 
 
+# Project-level policy presets reusable from the auto_pipeline integration, the
+# AutoFeatPlus benchmark script, the dashboard, and any notebook. Each value is
+# a list of pattern strings in the same syntax `select_autofeat_plus_features`
+# accepts (`column:<name>`, `re:<regex>`, plain substring).
+#
+# IMPORTANT:
+#  - `time-private` blocks `time`/`dt`/`datetime` from the feature set. Use it
+#    only when you don't need a chronological split — auto_pipeline's like-for-
+#    like temporal split needs the time column to survive into the joined frame.
+#  - `target-proxy-private` is the safe default for auto_pipeline: it strips
+#    sibling-percentile leakers (`lat50/.../latNN`, `min`, `mean`) without
+#    touching the temporal key.
+EUR_POLICY_PRESETS: dict[str, list[str]] = {
+    "time-private":         ["column:time", "column:dt", "column:datetime"],
+    "resource-private":     ["column:cpu_limit", "column:ram_limit",
+                             "column:cpu_usage", "column:ram_usage"],
+    "workload-private":     ["column:n", "column:c"],
+    "target-proxy-private": [r"re:(^|\.)lat\d+$", "column:min", "column:mean"],
+}
+
+
+def resolve_policy_patterns(policies: Iterable[str]) -> list[str]:
+    """Expand one or more policy preset keys into a flat list of patterns.
+
+    ``"all"`` means the union of every preset; ``"none"`` (or an empty input)
+    means no extra patterns on top of ``DEFAULT_SENSITIVE_PATTERNS``. Unknown
+    keys raise ``KeyError`` so typos surface immediately.
+    """
+    patterns: list[str] = []
+    for p in policies or ():
+        p = p.strip()
+        if not p or p == "none":
+            continue
+        if p == "all":
+            for values in EUR_POLICY_PRESETS.values():
+                patterns.extend(values)
+            continue
+        if p not in EUR_POLICY_PRESETS:
+            raise KeyError(f"unknown policy '{p}' (valid: {sorted(EUR_POLICY_PRESETS)} | 'all' | 'none')")
+        patterns.extend(EUR_POLICY_PRESETS[p])
+    return patterns
+
+
 @dataclass
 class AutoFeatPlusSelection:
     dataframe: pd.DataFrame

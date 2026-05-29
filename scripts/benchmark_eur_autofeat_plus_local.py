@@ -8,17 +8,18 @@ from pathlib import Path
 import pandas as pd
 
 from feature_discovery.config import AUTO_GLUON_FOLDER
-from feature_discovery.experiments.autofeat_plus import score_features, select_autofeat_plus_features
+from feature_discovery.experiments.autofeat_plus import (
+    EUR_POLICY_PRESETS,
+    score_features,
+    select_autofeat_plus_features,
+)
 from feature_discovery.experiments.local_benchmark_utils import join_tables, read_table
 from feature_discovery.experiments.result_object import Result
 
 
-EUR_POLICY_PATTERNS = {
-    "time-private": ["column:time", "column:dt", "column:datetime"],
-    "resource-private": ["column:cpu_limit", "column:ram_limit", "column:cpu_usage", "column:ram_usage"],
-    "workload-private": ["column:n", "column:c"],
-    "target-proxy-private": [r"re:(^|\.)lat\d+$", "column:min", "column:mean"],
-}
+# Kept as a module-local alias so the existing references (`EUR_POLICY_PATTERNS`)
+# in this script keep working — single source of truth lives in autofeat_plus.py.
+EUR_POLICY_PATTERNS = EUR_POLICY_PRESETS
 
 
 MODEL_SUITES = {

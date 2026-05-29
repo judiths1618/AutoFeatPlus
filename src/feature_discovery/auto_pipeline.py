@@ -94,6 +94,17 @@ def _parse_args() -> argparse.Namespace:
                              "Example: --algorithms XGB,RF,KNN (default: XGB).")
     parser.add_argument("--top-k", type=int, default=15)
     parser.add_argument("--value-ratio", type=float, default=0.65)
+    parser.add_argument(
+        "--autofeat-plus-policy", nargs="*", default=["target-proxy-private"],
+        help="One or more policy preset keys layered on top of DEFAULT_SENSITIVE_PATTERNS "
+             "for the AutoFeatPlus pass. Valid: time-private, resource-private, "
+             "workload-private, target-proxy-private, all, none. "
+             "Default ['target-proxy-private'] strips sibling-percentile leakers "
+             "without blocking the temporal key.")
+    parser.add_argument(
+        "--autofeat-plus-top-k", type=int, default=15,
+        help="Top-k for the AutoFeatPlus pass; defaults to --top-k for symmetry "
+             "with the AutoFeat pass.")
     parser.add_argument("--seed", type=int, default=int(os.getenv("AUTOFEAT_SEED", "42")),
                         help="Global random seed for reproducible runs (default: 42). "
                              "Pins PYTHONHASHSEED, NumPy/Python/Torch RNGs, and the "
@@ -268,7 +279,11 @@ def main() -> None:
         # 3) JOIN_ALL
         print(f"\n[2/3 · {alg}] JOIN_ALL ...")
         try:
-            all_results.extend(join_all_bfs(dataset=dataset, algorithm=alg))
+            all_results.extend(join_all_bfs(
+                dataset=dataset, algorithm=alg,
+                autofeat_plus_policies=args.autofeat_plus_policy,
+                autofeat_plus_top_k=args.autofeat_plus_top_k,
+            ))
         except Exception as e:
             import traceback
             print(f"  JOIN_ALL failed: {e}")

@@ -57,6 +57,16 @@ run_scenario scenarioK_csi \
   --data-dir scenarios/scenarioK_csi --dataset-type binary \
   --no-transformer-discovery --algorithms XGB
 
+run_scenario scenarioR_resource \
+  --base-table scenarios/scenarioR_resource/rabbitmq-reduced.csv --target lat99 \
+  --data-dir scenarios/scenarioR_resource --dataset-type regression \
+  --temporal-key time --temporal-tolerance 60 --no-transformer-discovery --algorithms XGB
+
+run_scenario scenarioU_unrelated \
+  --base-table scenarios/scenarioU_unrelated/rabbitmq-reduced.csv --target lat99 \
+  --data-dir scenarios/scenarioU_unrelated --dataset-type regression \
+  --no-transformer-discovery --algorithms XGB
+
 echo
 echo "==================== RUN SUMMARY ===================="
 printf '%s\n' "${STATUS[@]}"

@@ -1,4 +1,4 @@
-# AutoFeat 2025 — 6G Feature Discovery and Time-Series Benchmarks
+# Data Augmentation by using AutoFeat — 6G-DALI Feature Discovery and Time-Series Benchmarks
 
 This repository contains reproducible experiments for two related, but distinct,
 questions on 6G telemetry data:
@@ -33,6 +33,7 @@ Each row below points at the code that changed.
 | **Non-redundant model comparison** — when `--algorithms XGB` is requested the runner trains **XGBoost + RandomForest** (companion model) instead of XGBoost + AutoGluon's degenerate `WeightedEnsemble_L2` (which for a single base model just duplicates it). | Every result row appeared twice with identical numbers under different algorithm names. | [`evaluation_algorithms._with_companion`](src/feature_discovery/experiments/evaluation_algorithms.py), `fit_weighted_ensemble=False` |
 | **Honest scenario lakes** — every benchmark scenario lake is stripped of target-percentile siblings (`lat50/75/95/min`, `mean`) and identity columns (`user_id`, `sample_id`) before evaluation. | The original showcases harvested target proxies — e.g. scenario 2C's "feature recovery" lifted R² by using `lat95` to predict `lat99`; KUL's "compression test" used `user_id` to predict `target_x`. Both inflated the showcase numbers. | [`prepare_augmentation_scenarios._strip_target_proxies`](scripts/prepare_augmentation_scenarios.py), `build_scenarioK` drops identity columns |
 | **Three-class scenario taxonomy** — the 9 scenarios are now explicitly tagged 🟢 positive / 🔴 negative / 🟡 ambiguous in the manifest, with two new entries (`scenarioR_resource`, `scenarioU_unrelated`) designed specifically to test honest cross-app augmentation and heterogeneous-lake refusal. | The original "expected_behaviour" labels (refuse/showcase) were inconsistent — some "refuses" actually had partial signal, some "showcases" lifted via target proxies. | [scenarios/scenarios.yaml](scenarios/scenarios.yaml) |
+| **AutoFeatPlus as a fifth approach in the headline pipeline** — `auto_pipeline` now emits a policy-aware `AutoFeatPlus` row alongside `BASE / JOIN_ALL / Filter / AutoFeat`. Same temporal split, same seed, deterministic Spearman+stable-sort selection, configurable via `--autofeat-plus-policy`. The dashboard's Method picker visualises which tables each method actually consumed. | The original AutoFeatPlus lived in a separate `benchmark_eur_autofeat_plus_local.py` script with its own random split, no shared seed, and policy presets duplicated as inline constants — making "AutoFeat vs AutoFeatPlus" impossible to read off the same SUMMARY row. | [`baselines.join_all_bfs`](src/feature_discovery/experiments/baselines.py) (third pass), [`autofeat_plus.EUR_POLICY_PRESETS`](src/feature_discovery/experiments/autofeat_plus.py) (single source of truth) |
 
 ### Reliability / correctness fixes
 
@@ -269,12 +270,19 @@ python -m feature_discovery.auto_pipeline \
   --label scenario2c
 ```
 
-Rows written by `auto_pipeline` include:
+Rows written by `auto_pipeline` (every approach evaluated on the same
+chronological 80/20 split when `--temporal-key` is set):
 
-- `BASE`: base-table features only.
+- `BASE`: base-table features only — no augmentation.
 - `Join_All_BFS`: every BFS-reachable joined feature.
-- `Join_All_BFS_Filter`: joined features after a relevance filter.
-- `AutoFeat`: BFS plus relevance/redundancy feature selection.
+- `Join_All_BFS_Filter`: joined features after a Spearman top-half filter.
+- `AutoFeat`: BFS plus mRMR relevance/redundancy feature selection.
+- `AutoFeatPlus`: BFS plus policy-aware utility selection (Spearman utility
+  minus privacy/missing-ratio/cost penalties). Default policy is
+  `target-proxy-private` — strips sibling-percentile leakers (`lat*`, `min`,
+  `mean`) without blocking the temporal key. Configure via
+  `--autofeat-plus-policy {time-private,resource-private,workload-private,target-proxy-private,all,none}`
+  and `--autofeat-plus-top-k <int>`.
 
 Useful options:
 
@@ -285,6 +293,12 @@ Useful options:
                               avoid look-ahead for forecasting-style joins
 --algorithms XGB,RF,KNN       evaluate multiple AutoGluon model families
 --seed 42                     global random seed (default 42)
+--autofeat-plus-policy        AutoFeatPlus policy preset(s) layered on top of
+  target-proxy-private        DEFAULT_SENSITIVE_PATTERNS. Choose any of
+                              {time-private, resource-private,
+                              workload-private, target-proxy-private,
+                              all, none}; default is target-proxy-private.
+--autofeat-plus-top-k 15      top-k for the AutoFeatPlus pass
 ```
 
 ### Reproducibility
@@ -438,10 +452,10 @@ streamlit run dashboards/augmentation_dashboard.py
 
 | Tab | What it shows |
 |---|---|
-| **Results** | Per-scenario `BASE / Join_All_BFS / Filter / AutoFeat` rows with picked algorithm; per-row feature-importance chart |
-| **Compare** | Cross-scenario pivot (`scenario × approach × algorithm`), enriched with `scenarios/scenarios.yaml` context |
+| **Results** | Per-scenario `BASE / Join_All_BFS / Filter / AutoFeat / AutoFeatPlus` rows with picked algorithm; per-row feature-importance chart |
+| **Compare** | Cross-scenario pivot (`scenario × approach × algorithm`), enriched with `scenarios/scenarios.yaml` context. Δ AutoFeat−BASE and Δ AutoFeatPlus−BASE both shown |
 | **Run on your data** | Upload a base table + lake CSVs (+ optional `connections.csv` and `metadata.txt`) and trigger the pipeline |
-| **Graph** | Inline Graphviz view of the live Neo4j graph **or** any picked scenario's `connections*.csv` from disk; degree-weighted node sizes, weight-thresholded edge filters, top-table panel |
+| **Graph** | Three pickers: **Source** (`Live Neo4j` or any scenario), **Method** (`All discovered edges` or one of `BASE` / `Join_All_BFS` / `Filter` / `AutoFeat` / `AutoFeatPlus`), **Algorithm** (`XGBoost` / `RandomForest`). Method mode draws **only the tables that method actually used**, sized by feature count, with a side panel listing every selected feature ranked by \|importance\|. Useful for "why did AutoFeat lift but AutoFeatPlus didn't?" — switch Method on scenarioR_resource and you'll see AutoFeat lit up 4 tables while AutoFeatPlus only used 1 |
 
 If `streamlit` is missing, install it in the active environment:
 
@@ -475,22 +489,20 @@ below are like-for-like. The 9 scenarios are explicitly tagged 🟢 positive /
 
 XGBoost (representative snapshot — re-run with `make demo` or `bash scripts/run_all_scenarios.sh`):
 
-| Class | Scenario | BASE | AutoFeat | Δ |
-|---|---|---|---|---|
-| 🟢 P | `scenario2c` (feature recovery, proxy-free lake) | 0.5395 | 0.9417 | **+0.402** |
-| 🟢 P | `scenarioR_resource` (cross-app contention, no target overlap) | 0.5395 | 0.9724 | **+0.433** |
-| 🟢 P | `scenarioK_csi` (wide-lake compression, identity-free) | 0.0000 | 1.0000 | **+1.000** |
-| 🔴 N | `scenario1` (per-`n` aggregated, structurally degenerate) | 0.9662 | 0.9662 | 0.000 |
-| 🔴 N | `scenarioN_target_n` (inverse target) | 0.9786 | 0.9794 | +0.001 |
-| 🔴 N | `scenarioU_unrelated` (heterogeneous lake — KUL → rabbitmq) | 0.9508 | 0.9765 | +0.026† |
-| 🟡 A | `scenarioA_lat95` (cross-app temporal, lake `lat*` stripped) | 0.9551 | 0.9796 | +0.025 |
-| 🟡 A | `scenarioA_lat99` (cross-app temporal, lake `lat*` stripped) | 0.9508 | 0.9765 | +0.026 |
-| 🟡 A | `scenarioB_amf_seg01` (within-app segment pooling) | 0.9412 | 0.9162 | −0.025 |
+| Class | Scenario | BASE | AutoFeat | AutoFeatPlus | Δ AF | Δ AF+ |
+|---|---|---:|---:|---:|---:|---:|
+| 🟢 P | `scenario2c` (feature recovery, proxy-free lake) | 0.5395 | 0.9417 | **0.9518** | +0.402 | **+0.412** |
+| 🟢 P | `scenarioR_resource` (cross-app contention, no target overlap) | 0.5395 | **0.9724** | 0.5373 | **+0.433** | −0.002 |
+| 🟢 P | `scenarioK_csi` (wide-lake compression, identity-free) | 0.0000 | **1.0000** | 0.9948 | **+1.000** | **+0.995** |
+| 🔴 N | `scenario1` (per-`n` aggregated, structurally degenerate) | 0.9662 | 0.9662 | 0.9454 | 0.000 | −0.021 |
+| 🔴 N | `scenarioN_target_n` (inverse target) | 0.9786 | 0.9794 | 0.9158 | +0.001 | −0.063 |
+| 🔴 N | `scenarioU_unrelated` (heterogeneous lake — KUL → rabbitmq) | 0.9508 | 0.9765 | 0.9508 | +0.026† | 0.000 |
+| 🟡 A | `scenarioA_lat95` (cross-app temporal, lake `lat*` stripped) | 0.9551 | 0.9796 | 0.9048 | +0.025 | −0.050 |
+| 🟡 A | `scenarioA_lat99` (cross-app temporal, lake `lat*` stripped) | 0.9508 | 0.9765 | 0.8845 | +0.026 | −0.066 |
+| 🟡 A | `scenarioB_amf_seg01` (within-app segment pooling) | 0.9412 | 0.9162 | 0.7742 | −0.025 | −0.167 |
 
-† scenarioU's +0.026 is **intra-base feature selection**, not lake augmentation —
-`Join_All_BFS` is identical to BASE (no lake features added). The cleanest
-single piece of evidence that AutoFeat's selection logic also helps on the
-base table alone.
+† scenarioU's +0.026 (AF) and 0.000 (AF+) is **intra-base feature selection**,
+not lake augmentation — `Join_All_BFS` is identical to BASE.
 
 What this tells us:
 - **AutoFeat lifts where lake information genuinely exists** (2C: missing
@@ -500,6 +512,20 @@ What this tells us:
   matched rows; scenarioU's heterogeneous KUL lake).
 - **Ambiguous lifts are small** (~±0.03) — within the noise of feature
   selection on the joined frame.
+
+### AutoFeat vs AutoFeatPlus — when does each one win?
+
+| Observation | Mechanism |
+|---|---|
+| **AutoFeatPlus matches or beats AutoFeat when the lake's strongest features are top-utility** (scenario2c +0.412 vs +0.402; K_csi +0.995 vs +1.000) | `score_plus` ranks ram_usage / cpu_usage / subcarrier features highly on their own merit; no interaction effect is needed |
+| **AutoFeatPlus loses badly when the lift requires *feature interaction*** (scenarioR_resource: −0.002 vs +0.433) | Cross-app `ram_usage` / `cpu_usage` rank below base `n` / `cpu_limit` by Spearman alone, so AutoFeatPlus's utility-only top-k misses them. AutoFeat's mRMR-style relevance/redundancy keeps them because they add orthogonal information. |
+| **AutoFeatPlus is more conservative on refusal scenarios** (1, N, U deltas all ≤ 0) | The top-k cap + privacy/missing/cost penalties trim the candidate set; fewer features means lower fit on already-strong BASEs |
+| **The honest privacy trade-off lives in the negative deltas on ambiguous cases** (A_lat95 −0.050; A_lat99 −0.066; B −0.167) | What you sacrifice in raw accuracy you buy back in policy guarantees AutoFeat doesn't provide — `pattern_risk` hard-blocks PII/identifier names, `proxy_risk`/`identifier_risk` penalise (but don't ban) data-derived risky columns |
+
+In the **Graph** tab, switch the Method picker between AutoFeat and AutoFeatPlus
+for scenarioR_resource and you'll see this visually — AutoFeat lights up 4
+tables (base + 3 peer-service `*-resources.csv`); AutoFeatPlus lights up only
+1 (base alone).
 
 Time-series augmentation:
 

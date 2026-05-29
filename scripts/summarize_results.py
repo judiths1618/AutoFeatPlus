@@ -35,7 +35,7 @@ def _rel(path) -> str:
     except ValueError:
         return Path(path).name
 
-APPROACHES = ["BASE", "Join_All_BFS", "Join_All_BFS_Filter", "AutoFeat"]
+APPROACHES = ["BASE", "Join_All_BFS", "Join_All_BFS_Filter", "AutoFeat", "AutoFeatPlus"]
 
 # AutoGluon reports the XGB hyperparameter key as the model name "XGBoost"; the
 # trivial no-feature fallback used the bare key. Treat them as one algorithm so a
@@ -149,6 +149,8 @@ def write_markdown(df: pd.DataFrame, scenarios: Dict[str, dict],
         )
         if "AutoFeat" in pivot.columns and "BASE" in pivot.columns:
             pivot["Δ AutoFeat−BASE"] = (pivot["AutoFeat"] - pivot["BASE"]).round(4)
+            if "AutoFeatPlus" in pivot.columns:
+                pivot["Δ AutoFeatPlus−BASE"] = (pivot["AutoFeatPlus"] - pivot["BASE"]).round(4)
         sections.append(f"\n## Algorithm: `{alg}`\n")
         sections.append(pivot.to_markdown())
 

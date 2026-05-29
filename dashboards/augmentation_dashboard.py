@@ -1,17 +1,26 @@
 """
 augmentation_dashboard.py
 =========================
-Streamlit dashboard for the AutoFeat feature-discovery pipeline.
+Streamlit dashboard for the AutoFeat / AutoFeatPlus feature-discovery pipeline.
 
 Four tabs:
-  1. Results    — per-scenario comparison + feature-importance drilldown
-                  (reads `auto_pipeline_<label>_summary.csv` and `_features.csv`).
+  1. Results    — per-scenario BASE / Join_All_BFS / Filter / AutoFeat /
+                  AutoFeatPlus rows with feature-importance drilldown
+                  (reads `auto_pipeline_<label>_summary.csv` + `_features.csv`).
   2. Compare    — cross-scenario pivot, enriched with `scenarios/scenarios.yaml`
-                  context (purpose, expected behaviour).
-  3. Run        — upload base + lake CSVs, configure target/temporal-key, run the
-                  pipeline end-to-end with live log streaming.
-  4. Graph      — Neo4j connection state, edge/node counts, canned Cypher
-                  queries, and a direct link to the Neo4j Browser UI.
+                  context (purpose, expected behaviour). XGB → XGBoost is
+                  aliased so each scenario shows up under one row.
+  3. Run        — upload base + lake CSVs, configure target/temporal-key, run
+                  the pipeline end-to-end with live log streaming.
+  4. Graph      — inline Graphviz view with three pickers:
+                    • Source:    Live Neo4j  *or*  any scenario from the manifest
+                    • Method:    All discovered edges *or* one of
+                                 BASE / Join_All_BFS / Filter / AutoFeat / AutoFeatPlus
+                                 (drawn from `auto_pipeline_<label>_features.csv`)
+                    • Algorithm: XGBoost / RandomForest (only in method mode)
+                  Method mode draws only the tables that method actually
+                  consumed features from, with a side panel listing every
+                  selected feature ranked by |importance|.
 
 Launch:
     conda activate autofeat-6g
@@ -40,12 +49,15 @@ SCENARIOS_YAML = ROOT / "scenarios" / "scenarios.yaml"
 DEFAULT_NEO4J_HOST = os.environ.get("NEO4J_HOST", "bolt://localhost:7687")
 NEO4J_BROWSER_URL = "http://localhost:7474"
 
-APPROACHES = ["BASE", "Join_All_BFS", "Join_All_BFS_Filter", "AutoFeat"]
+APPROACHES = ["BASE", "Join_All_BFS", "Join_All_BFS_Filter", "AutoFeat", "AutoFeatPlus"]
 APPROACH_COLOURS = {
     "BASE": "#888888",
     "Join_All_BFS": "#5ba9ff",
     "Join_All_BFS_Filter": "#9c8bff",
     "AutoFeat": "#ff7f50",
+    # Olive-ish — distinguishable from the AutoFeat orange without clashing
+    # with the cool palette used for the lake/filter rows.
+    "AutoFeatPlus": "#5b8c00",
 }
 
 st.set_page_config(page_title="AutoFeat Feature Discovery", layout="wide")
@@ -180,6 +192,68 @@ def read_scenario_graph(label: str, base_dir: str) -> Tuple[List[Dict], List[Dic
             nodes_seen[tt] = tt
     nodes = [{"label": n, "id": f"{base_dir}/{n}"} for n in nodes_seen]
     return nodes, edges, None
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def load_method_selection(label: str) -> pd.DataFrame:
+    """Return the per-(approach, algorithm, feature, source_table) selection rows.
+
+    Empty DataFrame if the features CSV doesn't exist (scenario not run yet).
+    """
+    f = RESULTS_DIR / f"auto_pipeline_{label}_features.csv"
+    if not f.exists():
+        return pd.DataFrame(columns=["approach", "algorithm", "feature", "source_table", "importance"])
+    return pd.read_csv(f)
+
+
+def method_graph(
+    method_df: pd.DataFrame,
+    approach: str,
+    algorithm: str,
+    base_table_name: str,
+    discovered_edges: List[Dict],
+) -> Tuple[List[Dict], List[Dict], List[Dict]]:
+    """Build (nodes, edges, feature_rows) for a single (scenario, approach, algorithm).
+
+    Uses the per-feature ``source_table`` rows in the features CSV to decide
+    which lake tables the method actually consumed; intersects ``discovered_edges``
+    so only joins the method materialised are drawn. Standalone source tables
+    that are not in any discovered edge are connected to ``base_table_name``
+    by synthetic dashed edges (weight 0) so the viewer can still see them.
+    """
+    sub = method_df[(method_df.approach == approach) & (method_df.algorithm == algorithm)]
+    if sub.empty:
+        return [], [], []
+
+    # Source tables the method actually selected features from. "base" is the
+    # special sentinel for BASE-only rows; map it to the configured base table.
+    raw_sources = sub.source_table.fillna("base").unique().tolist()
+    sources = {s if s != "base" else base_table_name for s in raw_sources}
+    if base_table_name not in sources:
+        sources.add(base_table_name)  # always show the base for orientation
+
+    # Keep only edges whose endpoints are both in the selected sources.
+    used_edges = [e for e in discovered_edges
+                  if e["from_table"] in sources and e["to_table"] in sources]
+
+    # Per-source feature count (used for node sizing + side panel).
+    feat_count = (
+        sub.assign(source_table=sub.source_table.fillna("base").replace({"base": base_table_name}))
+        .groupby("source_table").size()
+        .to_dict()
+    )
+    nodes = [
+        {"label": n, "id": n, "feature_count": int(feat_count.get(n, 0))}
+        for n in sources
+    ]
+
+    feature_rows = (
+        sub.assign(source_table=sub.source_table.fillna("base").replace({"base": base_table_name}))
+        .sort_values("importance", key=lambda s: s.abs(), ascending=False)
+        [["feature", "source_table", "importance"]]
+        .to_dict("records")
+    )
+    return nodes, used_edges, feature_rows
 
 
 def neo4j_stats() -> Tuple[Optional[int], Optional[int], Optional[str]]:
@@ -335,6 +409,8 @@ with tab_compare:
             )
             if "AutoFeat" in wide.columns and "BASE" in wide.columns:
                 wide["Δ AutoFeat−BASE"] = (wide["AutoFeat"] - wide["BASE"]).round(4)
+            if "AutoFeatPlus" in wide.columns and "BASE" in wide.columns:
+                wide["Δ AutoFeatPlus−BASE"] = (wide["AutoFeatPlus"] - wide["BASE"]).round(4)
             st.dataframe(wide, use_container_width=True)
 
         if manifest:
@@ -479,28 +555,75 @@ with tab_graph:
 
     # ---- source picker: scenarios from the manifest + live Neo4j -----------
     LIVE = "Live Neo4j (current ingest)"
+    ALL_EDGES = "All discovered edges (connections files)"
     scenarios = load_scenario_manifest()  # {label: scenario_dict}
     scenario_labels = sorted(scenarios.keys())
-    source = st.selectbox(
+
+    pc1, pc2, pc3 = st.columns([1.2, 1.4, 1.1])
+    source = pc1.selectbox(
         "Source",
         [LIVE] + scenario_labels,
         index=0,
         key="graph_source",
         help="Live shows what's currently in Neo4j. Pick a scenario to read its "
-             "connections files from disk — works even if that scenario is not "
-             "currently ingested.",
+             "connections files (or any method's actual selection) from disk.",
     )
 
+    method_df = pd.DataFrame()
+    method_choices = [ALL_EDGES]
+    algorithm_choices: List[str] = []
+    if source != LIVE:
+        method_df = load_method_selection(source)
+        if not method_df.empty:
+            # Canonical order — same one the summary CSV uses
+            order = ["BASE", "Join_All_BFS", "Join_All_BFS_Filter", "AutoFeat", "AutoFeatPlus"]
+            seen = list(method_df.approach.unique())
+            method_choices += [m for m in order if m in seen] + [m for m in seen if m not in order]
+            algorithm_choices = sorted(method_df.algorithm.unique().tolist())
+
+    method = pc2.selectbox(
+        "Method",
+        method_choices,
+        index=0,
+        key="graph_method",
+        help="`All discovered edges` shows what the schema/transformer pipeline "
+             "uncovered. Pick a method to see only the tables that method "
+             "actually consumed features from (driven by the per-scenario "
+             "`auto_pipeline_<label>_features.csv`).",
+    )
+    algorithm = ""
+    if method != ALL_EDGES and algorithm_choices:
+        default_idx = algorithm_choices.index("XGBoost") if "XGBoost" in algorithm_choices else 0
+        algorithm = pc3.selectbox("Algorithm", algorithm_choices, index=default_idx, key="graph_algo")
+
+    # ---- fetch the underlying graph + (optionally) method overlay -----------
     if source == LIVE:
         g_nodes, g_edges, g_err = fetch_graph()
         source_caption = "Source: live Neo4j ingest"
+        feature_rows: List[Dict] = []
     else:
         scn = scenarios.get(source, {})
-        g_nodes, g_edges, g_err = read_scenario_graph(source, scn.get("base_dir", ""))
-        source_caption = (
-            f"Source: `{scn.get('base_dir', source)}/connections*.csv` "
-            f"(expected: {scn.get('expected_behaviour', '—')})"
-        )
+        all_nodes, all_edges, g_err = read_scenario_graph(source, scn.get("base_dir", ""))
+        if method == ALL_EDGES or method_df.empty:
+            g_nodes, g_edges = all_nodes, all_edges
+            feature_rows = []
+            extra = "" if method == ALL_EDGES else f" — no features CSV for `{source}` yet"
+            source_caption = (
+                f"Source: `{scn.get('base_dir', source)}/connections*.csv` "
+                f"(expected behaviour: {scn.get('expected_behaviour', '—')}){extra}"
+            )
+        else:
+            g_nodes, g_edges, feature_rows = method_graph(
+                method_df=method_df,
+                approach=method,
+                algorithm=algorithm,
+                base_table_name=scn.get("base_table", ""),
+                discovered_edges=all_edges,
+            )
+            source_caption = (
+                f"Source: `{source}` × **{method}** × `{algorithm}` "
+                f"({len(g_nodes)} tables, {len(feature_rows)} selected features)"
+            )
 
     st.caption(source_caption)
 
@@ -610,6 +733,19 @@ with tab_graph:
                     columns=["table", "degree"],
                 )
                 st.dataframe(deg_df, use_container_width=True, hide_index=True)
+
+            # ---- companion stats: features the method actually picked -------
+            if feature_rows:
+                with st.expander(
+                    f"Features selected by **{method}** × `{algorithm}` "
+                    f"({len(feature_rows)} rows, ranked by |importance|)",
+                    expanded=False,
+                ):
+                    st.dataframe(
+                        pd.DataFrame(feature_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
 
     st.divider()
     with st.expander("Canned Cypher queries (paste into Neo4j Browser)", expanded=False):

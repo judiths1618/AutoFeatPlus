@@ -10,13 +10,34 @@ from feature_discovery.autofeat_pipeline.feature_selection import spearman_corre
 from feature_discovery.baselines.arda import select_arda_features_budget_join
 from feature_discovery.baselines.join_all import JoinAll
 from feature_discovery.experiments.dataset_object import Dataset, REGRESSION
+from feature_discovery.experiments.autofeat_plus import (
+    DEFAULT_SENSITIVE_PATTERNS,
+    resolve_policy_patterns,
+    select_autofeat_plus_features,
+)
 from feature_discovery.experiments.evaluation_algorithms import evaluate_all_algorithms, _resolve_time_column
 from feature_discovery.experiments.init_datasets import init_datasets
 from feature_discovery.experiments.result_object import Result
 from feature_discovery.experiments.utils_dataset import filter_datasets
 
 
-def join_all_bfs(dataset: Dataset, algorithm: str):
+def join_all_bfs(dataset: Dataset, algorithm: str,
+                 autofeat_plus_policies: list[str] | None = None,
+                 autofeat_plus_top_k: int = 15):
+    """Run JOIN_ALL_BFS, the Spearman-filter pass, and the AutoFeatPlus pass.
+
+    Three result groups, all evaluated on the same BFS-joined frame with the
+    same temporal split for a like-for-like comparison:
+
+      - ``Join_All_BFS``         — every joined column
+      - ``Join_All_BFS_Filter``  — top-half by ``|spearman(feature, target)|``
+      - ``AutoFeatPlus``         — policy-aware top-k by ``score_plus`` (utility
+                                   minus privacy/missing penalties)
+
+    ``autofeat_plus_policies`` is the same set of preset keys as the
+    ``--autofeat-plus-policy`` CLI flag (e.g. ``["target-proxy-private"]``).
+    Defaults to ``None`` → use ``DEFAULT_SENSITIVE_PATTERNS`` only.
+    """
     all_results = []
     start = time.time()
     joinall = JoinAll(
@@ -81,6 +102,57 @@ def join_all_bfs(dataset: Dataset, algorithm: str):
         res.total_time += res.feature_selection_time + res.join_time
 
     all_results.extend(results)
+
+    # ─── AutoFeatPlus pass — policy-aware top-k on the same BFS frame ──────
+    # Reproducibility: `score_features` is Spearman + integer comparisons,
+    # `select_autofeat_plus_features` does a stable sort on (score_plus, utility).
+    # Given the deterministic `df` from above (PYTHONHASHSEED is pinned), the
+    # output is bit-for-bit identical across runs.
+    start_afp = time.time()
+    patterns = list(DEFAULT_SENSITIVE_PATTERNS) + (
+        resolve_policy_patterns(autofeat_plus_policies or [])
+    )
+    afp = select_autofeat_plus_features(
+        dataframe=df,
+        target_column=dataset.target_column,
+        top_k=autofeat_plus_top_k,
+        sensitive_patterns=patterns,
+    )
+    # `df` (post-generator) may carry synthesised feature names (e.g. `<col>.day`)
+    # that don't exist in the pre-generator `dataframe` we'll index. Drop those
+    # — same defensive pattern as the Spearman filter above.
+    afp_features = [f for f in afp.selected_features if f in dataframe.columns]
+    afp_selected = afp_features + [dataset.target_column]
+    if time_column and time_column not in afp_selected:
+        afp_selected.append(time_column)
+    end_afp = time.time()
+
+    if len(afp_features) < 1:
+        logging.warning(
+            "AutoFeatPlus selected no features after policy filtering — skipping pass."
+        )
+    else:
+        results, _ = evaluate_all_algorithms(
+            dataframe=dataframe[afp_selected],
+            target_column=dataset.target_column,
+            problem_type=dataset.dataset_type,
+            algorithm=algorithm,
+            time_column=dataset.temporal_key,
+        )
+        for res in results:
+            res.approach = Result.AUTOFEAT_PLUS
+            res.data_path = joinall.partial_join_name
+            res.data_label = dataset.base_table_label
+            res.join_path_features = afp_features
+            res.feature_selection_time = end_afp - start_afp
+            res.join_time = end - start
+            res.total_time += res.feature_selection_time + res.join_time
+            res.sensitive_features = afp.sensitive_features
+            res.blocked_features = afp.blocked_features
+            res.n_sensitive_features = len(afp.sensitive_features)
+            res.privacy_risk_score = afp.privacy_risk_score
+            res.top_k = autofeat_plus_top_k
+        all_results.extend(results)
 
     return all_results
 
