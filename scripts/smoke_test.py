@@ -38,8 +38,8 @@ EXPECTED = {
     # scenario, approach, metric, floor
     ("scenario2c", "BASE", "accuracy", 0.95),
     ("scenario2c", "AutoFeat", "accuracy", 0.98),     # observed ≈ 0.991
-    ("scenarioK_kul", "Join_All_BFS", "accuracy", 0.95),
-    ("scenarioK_kul", "AutoFeat", "accuracy", 0.85),  # observed ≈ 0.97
+    ("scenarioK_csi", "Join_All_BFS", "accuracy", 0.95),
+    ("scenarioK_csi", "AutoFeat", "accuracy", 0.90),  # observed ≈ 1.000
 }
 
 
@@ -122,18 +122,18 @@ def main(args: argparse.Namespace) -> int:
     runs = [
         ("scenario2c",
          ["python", "-m", "feature_discovery.auto_pipeline",
-          "--base-table", "datasets/scenario2c/rabbitmq-reduced.csv",
-          "--target", "lat99", "--data-dir", "datasets/scenario2c",
+          "--base-table", "scenarios/scenario2c/rabbitmq-reduced.csv",
+          "--target", "lat99", "--data-dir", "scenarios/scenario2c",
           "--dataset-type", "regression",
           "--temporal-key", "time", "--temporal-tolerance", "0",
           "--algorithms", "XGB", "--label", "scenario2c"]),
-        ("scenarioK_kul",
+        ("scenarioK_csi",
          ["python", "-m", "feature_discovery.auto_pipeline",
-          "--base-table", "datasets/scenarioK_kul/samples_base.csv",
-          "--target", "target_x", "--data-dir", "datasets/scenarioK_kul",
+          "--base-table", "scenarios/scenarioK_csi/samples_base.csv",
+          "--target", "target_x", "--data-dir", "scenarios/scenarioK_csi",
           "--dataset-type", "binary",
           "--no-transformer-discovery",
-          "--algorithms", "XGB", "--label", "scenarioK_kul"]),
+          "--algorithms", "XGB", "--label", "scenarioK_csi"]),
     ]
     for label, cmd in runs:
         if not _run(cmd, label):

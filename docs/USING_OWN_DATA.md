@@ -128,9 +128,9 @@ Accuracy is reported instead of R².
 Example on the canonical `scenario2c`:
 
 ```
-$ python scripts/diagnose.py --base-table datasets/scenario2c/rabbitmq-reduced.csv --target lat99
+$ python scripts/diagnose.py --base-table scenarios/scenario2c/rabbitmq-reduced.csv --target lat99
 
-Base table : datasets/scenario2c/rabbitmq-reduced.csv
+Base table : scenarios/scenario2c/rabbitmq-reduced.csv
   rows     : 21152
   columns  : 5
   target   : 'lat99' (found: True)

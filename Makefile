@@ -49,17 +49,17 @@ reset-graph:
 demo:
 	@echo ">>> [1/2] scenario2c — feature-recovery (self-join via time)"
 	$(PYTHON) -m feature_discovery.auto_pipeline \
-		--base-table datasets/scenario2c/rabbitmq-reduced.csv --target lat99 \
-		--data-dir datasets/scenario2c --dataset-type regression \
+		--base-table scenarios/scenario2c/rabbitmq-reduced.csv --target lat99 \
+		--data-dir scenarios/scenario2c --dataset-type regression \
 		--temporal-key time --temporal-tolerance 0 \
 		--algorithms XGB --label scenario2c
 	@echo
-	@echo ">>> [2/2] scenarioK_kul — MaMIMO CSI (binary, 800-feature lake)"
+	@echo ">>> [2/2] scenarioK_csi — MaMIMO CSI (binary, 16-antenna lake)"
 	$(PYTHON) -m feature_discovery.auto_pipeline \
-		--base-table datasets/scenarioK_kul/samples_base.csv --target target_x \
-		--data-dir datasets/scenarioK_kul --dataset-type binary \
+		--base-table scenarios/scenarioK_csi/samples_base.csv --target target_x \
+		--data-dir scenarios/scenarioK_csi --dataset-type binary \
 		--no-transformer-discovery \
-		--algorithms XGB --label scenarioK_kul
+		--algorithms XGB --label scenarioK_csi
 	@echo
 	@echo ">>> regenerating summary report ..."
 	$(PYTHON) scripts/summarize_results.py

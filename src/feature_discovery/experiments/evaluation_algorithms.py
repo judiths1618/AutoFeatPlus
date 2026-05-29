@@ -193,13 +193,23 @@ def run_auto_gluon(
     for model in model_names:
         result = predictor.evaluate(data=X_test, model=model)
         accuracy = result[score_type]
-        ft_imp = predictor.feature_importance(
-            data=X_test, model=model, feature_stage="original"
-        )
+        # AutoGluon's `feature_stage="original"` can KeyError when the train
+        # frame contains a string-datetime column that the feature generator
+        # decomposes into <col>.day / <col>.dayofweek (e.g. amf-performance.csv
+        # `dt`). The accuracy is already in hand, so a failed importance call
+        # should not lose the whole row — return an empty importance dict.
+        try:
+            ft_imp = predictor.feature_importance(
+                data=X_test, model=model, feature_stage="original"
+            )
+            feature_importance = dict(zip(list(ft_imp.index), ft_imp["importance"]))
+        except Exception as exc:
+            logging.warning("feature_importance() failed for %s: %s", model, exc)
+            feature_importance = {}
         entry = Result(
             algorithm=model,
             accuracy=accuracy,
-            feature_importance=dict(zip(list(ft_imp.index), ft_imp["importance"])),
+            feature_importance=feature_importance,
             join_path_features=join_path_features,
             split_mode=split_mode,
         )

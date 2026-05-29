@@ -1,0 +1,202 @@
+# scenarios.yaml — manifest for every augmentation benchmark
+#
+# Loaded by:
+#   - dashboards/augmentation_dashboard.py (for context display + per-scenario graph view)
+#   - scripts/summarize_results.py        (for cross-scenario report)
+#   - scripts/prepare_augmentation_scenarios.py (for verification)
+#
+# expected_behaviour values:
+#   showcase   — AutoFeat should discover joined features and lift R² over BASE
+#   refuse     — no useful augmentation exists; AutoFeat should match BASE
+#   partial    — small lift exists but mRMR may under-select
+#
+# After running a scenario, `auto_pipeline_<label>_summary.csv` lands in
+# results/6g_data/ with the actual numbers.
+
+scenarios:
+
+  - label: scenario1
+    name: Cross-service workload augmentation
+    purpose: >
+      Predict rabbitmq lat99 from rabbitmq's own configs + resource usage, augmented
+      with golang/python per-workload medians (join on n). Tests whether
+      cross-application latency profiles at the same workload level help.
+    base_dir: scenarios/scenario1
+    base_table: rabbitmq-s1.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: null
+    temporal_tolerance: null
+    lake:
+      - golang-by-n.csv
+      - python-by-n.csv
+    join_keys: [n]
+    expected_behaviour: refuse
+
+  - label: scenario2c
+    name: Feature recovery (self-join via time, proxy-free lake)
+    purpose: >
+      AutoFeat showcase. Base table is rabbitmq with runtime columns deliberately
+      stripped; lake is the same rabbitmq minus the target AND every
+      target-proxy percentile (lat50/75/95/min). Exact time join must recover
+      ram_usage/cpu_usage on their own merit, not via sibling-percentile shortcut.
+    base_dir: scenarios/scenario2c
+    base_table: rabbitmq-reduced.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: time
+    temporal_tolerance: 0
+    lake:
+      - rabbitmq-features.csv
+    join_keys: [time]
+    expected_behaviour: showcase
+
+  - label: scenarioA_lat95
+    name: Cross-app temporal (target lat95, proxy-free lakes)
+    purpose: >
+      Predict rabbitmq lat95 from configs + resources at matched timestamps from
+      golang/python/amf. Every lat*/min/mean column is stripped from each lake
+      table so a same-name cross-app lat95 cannot leak. The remaining question
+      is honest: does cross-app resource state at matched timestamps help?
+    base_dir: scenarios/scenarioA_lat95
+    base_table: rabbitmq-reduced.csv
+    target_column: lat95
+    dataset_type: regression
+    temporal_key: time
+    temporal_tolerance: 60
+    lake:
+      - golang-web-server-performance.csv
+      - python-web-server-performance.csv
+      - amf-performance.csv
+    join_keys: [time]
+    # Under a like-for-like temporal split, cross-app timing telemetry gives a
+    # small but real AutoFeat lift (~+0.025 R² over BASE), not pure refusal.
+    expected_behaviour: partial
+
+  - label: scenarioA_lat99
+    name: Cross-app temporal (target lat99, proxy-free lakes)
+    purpose: >
+      Same as scenarioA_lat95 but with lat99 as target. Lakes stripped of
+      lat*/min/mean. BASE is already strong because lat99 is predictable from
+      own resources; any cross-app lift now comes purely from genuine shared-load
+      correlation.
+    base_dir: scenarios/scenarioA_lat99
+    base_table: rabbitmq-reduced.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: time
+    temporal_tolerance: 60
+    lake:
+      - golang-web-server-performance.csv
+      - python-web-server-performance.csv
+      - amf-performance.csv
+    join_keys: [time]
+    # Like-for-like temporal split: small AutoFeat lift (~+0.026 R² over BASE).
+    expected_behaviour: partial
+
+  - label: scenarioB_amf_seg01
+    name: Within-app amf segments (join on n, proxy-free lake)
+    purpose: >
+      Predict amf seg01 lat99 with other amf segments as lake. Each lake segment
+      has its lat*/min/mean columns removed, so augmentation must come from
+      resource patterns at the same workload n — not from leaking a sibling
+      segment's percentile.
+    base_dir: scenarios/scenarioB_seg01
+    base_table: amf-seg01-reduced.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: null
+    temporal_tolerance: null
+    lake:
+      - amf-performance_seg02_20211112_151228.csv
+      - amf-performance_seg04_20211113_042705.csv
+      - amf-performance_seg05_20211113_141818.csv
+      - amf-performance_seg06_20211113_155101.csv
+      - amf-performance_seg07_20211113_175525.csv
+      - amf-performance_seg08_20211113_190233.csv
+      - amf-performance_seg09_20211113_201749.csv
+    join_keys: [n]
+    expected_behaviour: partial
+
+  - label: scenarioN_target_n
+    name: Inverse problem (target = workload n)
+    purpose: >
+      Flip the target: predict n (workload intensity) from rabbitmq's observed metrics,
+      with cross-app lake. Sanity check that AutoFeat refuses cross-app augmentation
+      even when the prediction target changes.
+    base_dir: datasets/EUR/6907619
+    base_table: rabbitmq-performance.csv
+    target_column: n
+    dataset_type: regression
+    temporal_key: time
+    temporal_tolerance: 60
+    lake:
+      - golang-web-server-performance.csv
+      - python-web-server-performance.csv
+      - amf-performance.csv
+    join_keys: [time]
+    expected_behaviour: refuse
+
+  - label: scenarioK_csi
+    name: KUL MaMIMO CSI compression (no identity columns in lake)
+    purpose: >
+      Information-poor base table (sample_key + binary target) joined to 16
+      antenna feature tables on sample_key. Each antenna table has only
+      subcarrier_*_real / subcarrier_*_imaginary features — user_id and
+      sample_id are dropped so AutoFeat cannot shortcut to a per-user lookup.
+      Tests wide-lake discovery + feature compression, not CSI-to-position
+      physics (only 4 users / 2 target values; see docs for caveats).
+    base_dir: scenarios/scenarioK_csi
+    base_table: samples_base.csv
+    target_column: target_x
+    dataset_type: binary
+    temporal_key: null
+    temporal_tolerance: null
+    lake:
+      - antenna_{00,04,08,12,16,20,24,28,32,36,40,44,48,52,56,60}_features.csv
+    join_keys: [sample_key]
+    expected_behaviour: showcase
+
+  - label: scenarioR_resource
+    name: Cross-app resource contention (proxy-free positive)
+    purpose: >
+      Honest cross-application augmentation. Base = rabbitmq configs + workload
+      n + lat99 (own runtime stripped). Lake = (time, ram_usage, cpu_usage)
+      per peer service (golang / python / amf). No latency or workload column
+      appears in the lake, so any lift must come from genuine shared-host
+      contention — when peers peak in resource use, rabbitmq slows down.
+    base_dir: scenarios/scenarioR_resource
+    base_table: rabbitmq-reduced.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: time
+    temporal_tolerance: 60
+    lake:
+      - golang-web-server-performance-resources.csv
+      - python-web-server-performance-resources.csv
+      - amf-performance-resources.csv
+    join_keys: [time]
+    expected_behaviour: showcase
+
+  - label: scenarioU_unrelated
+    name: Heterogeneous unrelated lake (honest negative)
+    purpose: >
+      Schema-discovery refusal test. Base = rabbitmq-reduced. Lake = the
+      KUL MaMIMO CSI tables (samples_base + 4 antenna feature tables). No
+      semantic shared column exists between the domains and no connections.csv
+      is provided. AutoFeat should refuse to augment — i.e. match BASE
+      exactly — rather than fabricate a join.
+    base_dir: scenarios/scenarioU_unrelated
+    base_table: rabbitmq-reduced.csv
+    target_column: lat99
+    dataset_type: regression
+    temporal_key: null
+    temporal_tolerance: null
+    lake:
+      - samples_base.csv
+      - antenna_00_features.csv
+      - antenna_16_features.csv
+      - antenna_32_features.csv
+      - antenna_48_features.csv
+    join_keys: []
+    expected_behaviour: refuse

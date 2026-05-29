@@ -6,7 +6,7 @@ Streamlit dashboard for the AutoFeat feature-discovery pipeline.
 Four tabs:
   1. Results    — per-scenario comparison + feature-importance drilldown
                   (reads `auto_pipeline_<label>_summary.csv` and `_features.csv`).
-  2. Compare    — cross-scenario pivot, enriched with `datasets/scenarios.yaml`
+  2. Compare    — cross-scenario pivot, enriched with `scenarios/scenarios.yaml`
                   context (purpose, expected behaviour).
   3. Run        — upload base + lake CSVs, configure target/temporal-key, run the
                   pipeline end-to-end with live log streaming.
@@ -36,7 +36,7 @@ import streamlit as st
 # ─── Paths / config ──────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results" / "6g_data"
-SCENARIOS_YAML = ROOT / "datasets" / "scenarios.yaml"
+SCENARIOS_YAML = ROOT / "scenarios" / "scenarios.yaml"
 DEFAULT_NEO4J_HOST = os.environ.get("NEO4J_HOST", "bolt://localhost:7687")
 NEO4J_BROWSER_URL = "http://localhost:7474"
 
@@ -87,7 +87,7 @@ def load_features(label: str) -> pd.DataFrame:
 
 @st.cache_data(show_spinner=False)
 def load_scenario_manifest() -> Dict[str, dict]:
-    """Parse datasets/scenarios.yaml (best-effort)."""
+    """Parse scenarios/scenarios.yaml (best-effort)."""
     if not SCENARIOS_YAML.exists():
         return {}
     try:
@@ -97,6 +97,89 @@ def load_scenario_manifest() -> Dict[str, dict]:
         return {s["label"]: s for s in data.get("scenarios", [])}
     except Exception:
         return {}
+
+
+@st.cache_data(show_spinner=False, ttl=10)
+def fetch_graph() -> Tuple[List[Dict], List[Dict], Optional[str]]:
+    """Return (nodes, edges, error) for the current Neo4j graph.
+
+    Each node is ``{label, id}``; each edge is
+    ``{from_table, to_table, from_col, to_col, weight}``. Cached for 10 s so
+    the graph tab stays snappy without missing fresh ingests.
+    """
+    try:
+        from neo4j import GraphDatabase
+        driver = GraphDatabase.driver(DEFAULT_NEO4J_HOST, auth=None)
+        with driver.session() as s:
+            nodes = [
+                {"label": r["label"], "id": r["id"]}
+                for r in s.run("MATCH (n) RETURN n.label AS label, n.id AS id")
+            ]
+            edges = [
+                {
+                    "from_table": r["from_table"],
+                    "to_table": r["to_table"],
+                    "from_col": r["from_col"],
+                    "to_col": r["to_col"],
+                    "weight": float(r["weight"]) if r["weight"] is not None else 1.0,
+                }
+                for r in s.run(
+                    "MATCH (a)-[r]->(b) "
+                    "RETURN a.label AS from_table, b.label AS to_table, "
+                    "       r.from_column AS from_col, r.to_column AS to_col, "
+                    "       coalesce(r.weight, 1.0) AS weight"
+                )
+            ]
+        driver.close()
+        return nodes, edges, None
+    except Exception as exc:
+        return [], [], str(exc)
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def read_scenario_graph(label: str, base_dir: str) -> Tuple[List[Dict], List[Dict], Optional[str]]:
+    """Build (nodes, edges) by reading a scenario's connections files from disk.
+
+    Reads ``connections.csv`` (explicit FK→PK edges, weight 1.0) and
+    ``connections_transformer.csv`` (transformer-discovered edges, weight from
+    the file) under ``base_dir``. Empty when neither file exists. Decouples the
+    per-scenario graph view from whichever scenario is currently ingested in
+    Neo4j, so any scenario in the manifest is browsable.
+    """
+    base = ROOT / base_dir if not Path(base_dir).is_absolute() else Path(base_dir)
+    if not base.is_dir():
+        return [], [], f"base_dir '{base_dir}' not found"
+    edges: List[Dict] = []
+    nodes_seen: Dict[str, str] = {}
+    for fname, source_tag in [("connections.csv", "explicit"),
+                              ("connections_transformer.csv", "transformer")]:
+        f = base / fname
+        if not f.exists():
+            continue
+        try:
+            df = pd.read_csv(f)
+        except Exception:
+            continue
+        # Accept both column orders (FK-first or PK-first); reuse the same
+        # semantic mapping (the actual data direction is FK→PK).
+        cols = set(df.columns)
+        if not {"fk_table", "fk_column", "pk_table", "pk_column"}.issubset(cols):
+            continue
+        for _, row in df.iterrows():
+            ft = str(row["fk_table"])
+            tt = str(row["pk_table"])
+            fc = str(row["fk_column"])
+            tc = str(row["pk_column"])
+            try:
+                w = float(row["weight"]) if "weight" in cols and pd.notna(row["weight"]) else 1.0
+            except (TypeError, ValueError):
+                w = 1.0
+            edges.append({"from_table": ft, "to_table": tt, "from_col": fc,
+                          "to_col": tc, "weight": w, "source": source_tag})
+            nodes_seen[ft] = ft
+            nodes_seen[tt] = tt
+    nodes = [{"label": n, "id": f"{base_dir}/{n}"} for n in nodes_seen]
+    return nodes, edges, None
 
 
 def neo4j_stats() -> Tuple[Optional[int], Optional[int], Optional[str]]:
@@ -392,26 +475,161 @@ with tab_graph:
         c2.metric("Relationships (join edges)", rels)
 
     st.divider()
-    st.subheader("Canned Cypher queries")
-    st.caption("Copy any of these into the Neo4j Browser to inspect the graph.")
+    st.subheader("Inline graph view")
 
-    queries = [
-        ("All discovered join edges with weight",
-         "MATCH (a)-[r]->(b)\n"
-         "RETURN a.label AS from_table, r.from_column, b.label AS to_table, r.to_column, r.weight\n"
-         "ORDER BY r.weight DESC LIMIT 100;"),
-        ("Reachable lake tables from a given base",
-         "MATCH path = (base {label: 'rabbitmq-reduced.csv'})-[*1..3]-(lake)\n"
-         "RETURN path LIMIT 50;"),
-        ("Edges grouped by source table (sanity check)",
-         "MATCH (a)-[r]->()\n"
-         "RETURN a.label AS table, count(r) AS edge_count\n"
-         "ORDER BY edge_count DESC;"),
-        ("All tables in the graph",
-         "MATCH (n)\n"
-         "RETURN n.label AS table, n.id AS path\n"
-         "ORDER BY n.label;"),
-    ]
-    for title, body in queries:
-        with st.expander(title):
+    # ---- source picker: scenarios from the manifest + live Neo4j -----------
+    LIVE = "Live Neo4j (current ingest)"
+    scenarios = load_scenario_manifest()  # {label: scenario_dict}
+    scenario_labels = sorted(scenarios.keys())
+    source = st.selectbox(
+        "Source",
+        [LIVE] + scenario_labels,
+        index=0,
+        key="graph_source",
+        help="Live shows what's currently in Neo4j. Pick a scenario to read its "
+             "connections files from disk — works even if that scenario is not "
+             "currently ingested.",
+    )
+
+    if source == LIVE:
+        g_nodes, g_edges, g_err = fetch_graph()
+        source_caption = "Source: live Neo4j ingest"
+    else:
+        scn = scenarios.get(source, {})
+        g_nodes, g_edges, g_err = read_scenario_graph(source, scn.get("base_dir", ""))
+        source_caption = (
+            f"Source: `{scn.get('base_dir', source)}/connections*.csv` "
+            f"(expected: {scn.get('expected_behaviour', '—')})"
+        )
+
+    st.caption(source_caption)
+
+    if g_err:
+        st.warning(f"Could not fetch graph data: {g_err}")
+    elif not g_edges:
+        if source == LIVE:
+            st.info("Graph has no edges yet — run a scenario in the Run tab to ingest tables.")
+        else:
+            # Map scenario label → prepare-script CLI key. Falls back to --all
+            # (always valid) when the label isn't one of the canonical ones.
+            _CLI_KEY = {
+                "scenario1": "1", "scenario2c": "2c",
+                "scenarioA_lat95": "a_lat95", "scenarioA_lat99": "a_lat99",
+                "scenarioB_amf_seg01": "b", "scenarioN_target_n": "n",
+                "scenarioK_csi": "k",
+                "scenarioR_resource": "r", "scenarioU_unrelated": "u",
+            }
+            cli_arg = "--scenario " + _CLI_KEY.get(source, source) if source in _CLI_KEY else "--all"
+            st.info(
+                f"No connections files found under `{scn.get('base_dir', source)}/`. "
+                f"Build this scenario first: "
+                f"`python scripts/prepare_augmentation_scenarios.py {cli_arg}`."
+            )
+    else:
+        import collections
+        import graphviz
+
+        # ---- filter controls --------------------------------------------------
+        weights = [e["weight"] for e in g_edges]
+        wmin, wmax = (min(weights), max(weights)) if weights else (0.0, 1.0)
+        c1, c2, c3, c4 = st.columns([1, 1, 1.5, 1])
+        max_edges = c1.slider("Max edges", 10, max(50, len(g_edges)),
+                              min(100, len(g_edges)), 10,
+                              help="Render at most this many top-weight edges.")
+        # Streamlit's slider requires min < max. When every edge has the same
+        # weight (e.g. scenario2c's single time→time edge with weight 1.0) show
+        # a static metric instead of a degenerate slider.
+        if wmax > wmin:
+            min_w = c2.slider("Min weight", float(wmin), float(wmax),
+                              float(wmin), step=max((wmax - wmin) / 20, 0.01))
+        else:
+            c2.metric("Edge weight", f"{wmin:.2f}",
+                      help="All edges share the same weight; no filter slider needed.")
+            min_w = wmin
+        name_q = c3.text_input("Filter by table name", "",
+                               help="Show only edges whose endpoints contain this substring.")
+        rankdir = c4.selectbox("Layout", ["LR", "TB"], index=0,
+                               help="Left→Right or Top→Bottom.")
+
+        # ---- apply filters and rank by weight --------------------------------
+        kept = [
+            e for e in g_edges
+            if e["weight"] >= min_w
+            and (not name_q or name_q.lower() in e["from_table"].lower()
+                 or name_q.lower() in e["to_table"].lower())
+        ]
+        kept.sort(key=lambda e: -e["weight"])
+        kept = kept[:max_edges]
+
+        if not kept:
+            st.info("No edges match the current filters.")
+        else:
+            # ---- degree → node sizing/colour ---------------------------------
+            deg = collections.Counter()
+            for e in kept:
+                deg[e["from_table"]] += 1
+                deg[e["to_table"]] += 1
+            top_deg = max(deg.values())
+
+            dot = graphviz.Digraph(
+                graph_attr={"rankdir": rankdir, "bgcolor": "transparent",
+                            "splines": "spline", "concentrate": "true"},
+                node_attr={"shape": "box", "style": "filled,rounded",
+                           "fontname": "Menlo", "fontsize": "10"},
+                edge_attr={"fontname": "Menlo", "fontsize": "9",
+                           "color": "#3b6ea8", "arrowsize": "0.6"},
+            )
+            seen = set()
+            for e in kept:
+                for n in (e["from_table"], e["to_table"]):
+                    if n in seen:
+                        continue
+                    # Scale node size + colour by degree.
+                    rel = deg[n] / top_deg if top_deg else 0
+                    fill = "#fff2c2" if deg[n] == top_deg else ("#cfe2ff" if rel > 0.5 else "#e7f5e7")
+                    dot.node(n, label=n, fillcolor=fill,
+                             fontsize=str(10 + int(4 * rel)))
+                    seen.add(n)
+                label = (e["from_col"] if e["from_col"] == e["to_col"]
+                         else f'{e["from_col"]}→{e["to_col"]}')
+                pen = 1 + 3 * (e["weight"] - wmin) / max(wmax - wmin, 1e-9)
+                dot.edge(e["from_table"], e["to_table"],
+                         label=label, penwidth=f"{pen:.1f}")
+
+            st.graphviz_chart(dot, use_container_width=True)
+            st.caption(
+                f"Showing {len(kept)} of {len(g_edges)} edges over "
+                f"{len(seen)} of {len(g_nodes)} tables · "
+                f"weight ∈ [{wmin:.2f}, {wmax:.2f}] · gold = highest-degree table."
+            )
+
+            # ---- companion stats: top tables by degree ----------------------
+            with st.expander("Top tables by degree (in shown subgraph)", expanded=False):
+                deg_df = pd.DataFrame(
+                    sorted(deg.items(), key=lambda kv: -kv[1])[:15],
+                    columns=["table", "degree"],
+                )
+                st.dataframe(deg_df, use_container_width=True, hide_index=True)
+
+    st.divider()
+    with st.expander("Canned Cypher queries (paste into Neo4j Browser)", expanded=False):
+        queries = [
+            ("All discovered join edges with weight",
+             "MATCH (a)-[r]->(b)\n"
+             "RETURN a.label AS from_table, r.from_column, b.label AS to_table, r.to_column, r.weight\n"
+             "ORDER BY r.weight DESC LIMIT 100;"),
+            ("Reachable lake tables from a given base",
+             "MATCH path = (base {label: 'rabbitmq-reduced.csv'})-[*1..3]-(lake)\n"
+             "RETURN path LIMIT 50;"),
+            ("Edges grouped by source table (sanity check)",
+             "MATCH (a)-[r]->()\n"
+             "RETURN a.label AS table, count(r) AS edge_count\n"
+             "ORDER BY edge_count DESC;"),
+            ("All tables in the graph",
+             "MATCH (n)\n"
+             "RETURN n.label AS table, n.id AS path\n"
+             "ORDER BY n.label;"),
+        ]
+        for title, body in queries:
+            st.markdown(f"**{title}**")
             st.code(body, language="cypher")

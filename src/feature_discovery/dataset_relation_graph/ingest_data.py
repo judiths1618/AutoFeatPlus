@@ -27,6 +27,11 @@ def ingest_unprocessed_data(dataset_folder_name: str = None):
         table_name = table_path.split("/")[-1]
 
         mapping[table_name] = table_path
+        # Always create a node per table so downstream lookups can resolve the
+        # base-table id even when no connections.csv exists and transformer
+        # discovery finds nothing to link (e.g. heterogeneous-lake refusal
+        # scenarios). Cypher MERGE makes this safe to re-run.
+        create_node(table_path, table_name)
 
     print("Add the ground-truth ... ")
     if dataset_folder_name:

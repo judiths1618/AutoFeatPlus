@@ -2,7 +2,7 @@
 summarize_results.py
 ====================
 Consolidate every scenario's `auto_pipeline_<label>_summary.csv` into a single
-cross-scenario comparison view, enriched with context from `datasets/scenarios.yaml`.
+cross-scenario comparison view, enriched with context from `scenarios/scenarios.yaml`.
 
 Writes:
   results/6g_data/summary.csv     — one row per (scenario, approach, algorithm)
@@ -25,7 +25,7 @@ import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 RESULTS_DIR = ROOT / "results" / "6g_data"
-SCENARIOS_YAML = ROOT / "datasets" / "scenarios.yaml"
+SCENARIOS_YAML = ROOT / "scenarios" / "scenarios.yaml"
 
 
 def _rel(path) -> str:

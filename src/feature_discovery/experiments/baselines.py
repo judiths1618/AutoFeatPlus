@@ -54,6 +54,11 @@ def join_all_bfs(dataset: Dataset, algorithm: str):
     sorted_features_scores = sorted(list(zip(list(X.columns), abs(spearman_correlation(np.array(X), np.array(y))))),
                                     key=lambda s: s[1], reverse=True)[:math.floor(len(X.columns) / 2)]
     spearman_features = list(map(lambda x: x[0], sorted_features_scores))
+    # Spearman ranks features of the post-generator frame (df), which can
+    # include AutoGluon-synthesised names like `<col>.day` / `<col>.dayofweek`.
+    # We index `dataframe` (pre-generator) below, so drop any selected feature
+    # that doesn't exist there — those would otherwise KeyError out the row.
+    spearman_features = [f for f in spearman_features if f in dataframe.columns]
     selected_features = spearman_features.copy()
     selected_features.append(dataset.target_column)
     # Retain the temporal key so the filtered model splits on the same window.

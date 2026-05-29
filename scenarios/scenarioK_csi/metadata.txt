@@ -1,0 +1,76 @@
+Nomadic dataset (ULA static) – antennas_as_features
+
+Overview
+- Each CSV contains the complete trajectory for a single user sampled over time.
+- Every row corresponds to one timestep of the trajectory.
+- Each antenna column stores the full 100-subcarrier complex vector captured by that antenna at the timestep.
+- The "user position" column encodes the ground-truth position used as the prediction target for ML models.
+
+Columns
+- (index): Unnamed index column with the 0-based timestep for the user trajectory.
+- user position: User position label repeated for every timestep of the file.
+- antenna 1 … antenna 64: Complex subcarrier vectors (length 100) for the respective antenna elements of the 64-element ULA. Values are serialized as numpy-style complex arrays.
+
+Primary key
+- Combination of the source file path ("__file__") and the unnamed index column.
+
+---
+
+Nomadic dataset (ULA static) – subcarriers_as_features_complex
+
+Overview
+- Each CSV contains one sample for a single user captured across all antennas.
+- Rows enumerate the antennas that contributed to the sample.
+- Columns "subcarrier 1" … "subcarrier 100" hold the complex coefficient for the respective OFDM subcarrier.
+- Keys identify the user and antenna associated with the row.
+
+Columns
+- (index): Unnamed index column with the antenna index within the sample.
+- subcarrier 1 … subcarrier 100: Complex channel coefficients for the corresponding subcarrier measured for the antenna represented by the row.
+- key_antennas_*: Patterned columns that repeat the antenna identifier for compatibility with consumers expecting explicit keys.
+- key_user_position: User position label associated with the captured sample.
+
+Primary key
+- Combination of the source file path ("__file__") and the unnamed index column.
+
+---
+
+Nomadic dataset (ULA static) – subcarriers_as_features_real
+
+Overview
+- Structure matches the complex export above but each subcarrier cell stores a two-element [real imag] vector instead of a complex number.
+- Each CSV contains one sample for a single user, with rows enumerating antennas and columns enumerating subcarriers.
+- Key columns mirror those present in the complex export to keep antenna and user identifiers aligned across tables.
+
+Columns
+- (index): Unnamed index column with the antenna index within the sample.
+- subcarrier 1 … subcarrier 100: Real-valued two-element arrays [real, imag] holding the channel coefficients for the corresponding subcarrier.
+- key_antennas_*: Patterned columns mirroring the antenna identifier for the row.
+- key_user_position: User position label associated with the captured sample.
+
+Primary key
+- Combination of the source file path ("__file__") and the unnamed index column.
+
+---
+
+Nomadic dataset (ULA static) – csi_as_features
+
+Overview
+- Each CSV captures a single antenna from a user sample with one row per subcarrier.
+- Real and imaginary parts of the channel coefficient are split into separate numeric columns.
+- Key columns identify the user, antenna, and subcarrier represented by the row.
+
+Columns
+- (index): Unnamed index column matching the subcarrier index within the antenna capture.
+- real / imaginary: Floating-point components of the complex channel coefficient.
+- key_subcarriers_*: Patterned columns providing the explicit subcarrier identifier.
+- key_antennas_*: Patterned columns identifying the antenna that generated the measurements.
+- key_user_position: User position label associated with the measurement.
+
+Primary key
+- Combination of the source file path ("__file__") and the key_subcarriers_* column for the row.
+
+Key alignment across tables
+- key_user_position values are shared across all exports, allowing samples to be mapped back to the user trajectory metadata.
+- key_antennas_* values are reused wherever the same antenna appears, enabling joins between antenna- and subcarrier-oriented layouts.
+- key_subcarriers_* values align the subcarrier indices between the csi_as_features tables and the subcarrier reference file.

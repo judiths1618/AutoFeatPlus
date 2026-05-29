@@ -43,9 +43,12 @@ dashboards/
 └── eur_time_series_dashboard.py         # separated TS / AutoFeat / bridge views
 
 datasets/
-├── EUR/6907619/                         # 6G EUR telemetry tables
-├── scenario*/                           # generated AutoFeat benchmark scenarios
-└── KUL/                                 # MaMIMO CSI data layouts
+├── EUR/6907619/                         # raw 6G EUR telemetry tables
+└── KUL/                                 # raw MaMIMO CSI data layouts
+
+scenarios/
+├── scenarios.yaml                       # benchmark manifest
+└── scenario*/                           # generated AutoFeat benchmark scenarios
 
 results/6g_data/
 ├── augmentation/                        # AutoFeat scenario summaries
@@ -114,8 +117,10 @@ datasets/EUR/
     └── split_output/
 ```
 
-Scenario builders write reproducible benchmark folders under `datasets/`, for
-example `datasets/scenario2c/` and `datasets/scenarioB_seg01/`.
+Scenario builders write reproducible benchmark folders under `scenarios/`, for
+example `scenarios/scenario2c/` and `scenarios/scenarioB_seg01/`. Raw inputs
+(`datasets/EUR/`, `datasets/KUL/`) stay separate so a scenario rebuild can never
+corrupt the source data.
 
 ## Quick Reproduction Path
 
@@ -128,9 +133,9 @@ docker-compose up -d neo4j
 python scripts/prepare_augmentation_scenarios.py --scenario 2c k
 
 python -m feature_discovery.auto_pipeline \
-  --base-table datasets/scenario2c/rabbitmq-reduced.csv \
+  --base-table scenarios/scenario2c/rabbitmq-reduced.csv \
   --target lat99 \
-  --data-dir datasets/scenario2c \
+  --data-dir scenarios/scenario2c \
   --dataset-type regression \
   --temporal-key time \
   --temporal-tolerance 0 \
@@ -138,13 +143,13 @@ python -m feature_discovery.auto_pipeline \
   --label scenario2c
 
 python -m feature_discovery.auto_pipeline \
-  --base-table datasets/scenarioK_kul/samples_base.csv \
+  --base-table scenarios/scenarioK_csi/samples_base.csv \
   --target target_x \
-  --data-dir datasets/scenarioK_kul \
+  --data-dir scenarios/scenarioK_csi \
   --dataset-type binary \
   --no-transformer-discovery \
   --algorithms XGB \
-  --label scenarioK_kul
+  --label scenarioK_csi
 
 python scripts/summarize_results.py
 ```
@@ -159,7 +164,7 @@ Expected outputs:
 
 ```text
 results/6g_data/auto_pipeline_scenario2c.csv
-results/6g_data/auto_pipeline_scenarioK_kul.csv
+results/6g_data/auto_pipeline_scenarioK_csi.csv
 results/6g_data/SUMMARY.md
 results/6g_data/summary.csv
 ```
@@ -191,26 +196,27 @@ improve a downstream tabular model?**
 python scripts/prepare_augmentation_scenarios.py --all
 ```
 
-Available scenario keys:
+Available scenario keys (positive / negative / ambiguous):
 
-| Key | Scenario | Purpose |
-|---|---|---|
-| `1` | `scenario1` | Cross-service workload augmentation via `n`; should often refuse |
-| `2c` | `scenario2c` | Feature recovery via exact `time`; should discover useful features |
-| `a_lat95` | `scenarioA_lat95` | Cross-application temporal joins for `lat95`; control/refusal case |
-| `a_lat99` | `scenarioA_lat99` | Cross-application temporal joins for `lat99`; control/refusal case |
-| `b` | `scenarioB_seg01` | Within-AMF segments via `n`; partial/weak-signal case |
-| `n` | `scenarioN_target_n` | Inverse target `n`; control/refusal case |
-| `k` | `scenarioK_kul` | MaMIMO CSI feature compression; should discover |
-| `k_csi` | `scenarioK_csi` | Larger CSI layout built from raw CSI-as-features files |
+| Key | Scenario | Class | Purpose |
+|---|---|---|---|
+| `2c` | `scenario2c` | 🟢 positive | Feature recovery via exact `time` (lake stripped of `lat*`/`min` — proxy-free) |
+| `r`  | `scenarioR_resource` | 🟢 positive | Cross-app resource-contention augmentation; lake has only `(time, ram_usage, cpu_usage)` per peer service |
+| `k`  | `scenarioK_csi` | 🟢 positive | Wide MaMIMO CSI lake (16 antenna tables, `user_id`/`sample_id` dropped) — discovery + compression |
+| `1` | `scenario1` | 🔴 negative | Per-`n` aggregated cross-app lake; joined columns are `f(n)` only, no new info |
+| `n` | `scenarioN_target_n` | 🔴 negative | Inverse target `n`; cross-app `n` matches rabbitmq's on ~3.5 % → refusal |
+| `u` | `scenarioU_unrelated` | 🔴 negative | Heterogeneous unrelated lake (rabbitmq base + KUL CSI lake); no shared key |
+| `a_lat95` | `scenarioA_lat95` | 🟡 ambiguous | Cross-app temporal (asof); lakes stripped of `lat*`/`min`/`mean` |
+| `a_lat99` | `scenarioA_lat99` | 🟡 ambiguous | Same as `a_lat95` with target `lat99` |
+| `b` | `scenarioB_seg01` | 🟡 ambiguous | Within-AMF segments via `n`; lakes stripped of `lat*`/`min`/`mean` |
 
 ### Run One Scenario
 
 ```bash
 python -m feature_discovery.auto_pipeline \
-  --base-table datasets/scenario2c/rabbitmq-reduced.csv \
+  --base-table scenarios/scenario2c/rabbitmq-reduced.csv \
   --target lat99 \
-  --data-dir datasets/scenario2c \
+  --data-dir scenarios/scenario2c \
   --dataset-type regression \
   --temporal-key time \
   --temporal-tolerance 0 \
@@ -424,9 +430,9 @@ test window when `--temporal-key` is set, so the deltas are like-for-like):
 - `scenario2c` is the clean feature-recovery case; recovering the RabbitMQ
   runtime features through `time` lifts R² from a weak BASE (~0.54 on the future
   window) to ~0.99 — the strongest showcase.
-- `scenarioK_kul` / `scenarioK_csi` are the high-dimensional CSI cases; AutoFeat
-  compresses a wide antenna lake into ~15 features at ~1.0 accuracy, while the
-  information-poor BASE (key + target only) cannot train.
+- `scenarioK_csi` is the high-dimensional CSI case; AutoFeat compresses a wide
+  16-antenna lake into ~15 features at ~1.0 accuracy, while the information-poor
+  BASE (key + target only) cannot train.
 - `scenarioA_lat95` / `scenarioA_lat99` give AutoFeat a modest lift (~+0.025)
   once BASE and AutoFeat share the temporal split — cross-app timing telemetry
   helps a little (these were previously read as pure refusal cases).

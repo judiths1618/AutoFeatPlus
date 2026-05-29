@@ -35,16 +35,16 @@ with the base. AutoGluon trains and reports R² (regression) or accuracy
 
 ## Headline numbers
 
-Two of the seven benchmark scenarios are the clear showcase:
+Two of the six benchmark scenarios are the clear showcase:
 
 | Scenario | Setup | BASE | AutoFeat | Lift |
 |---|---|---|---|---|
-| **scenario2c** — synthetic feature recovery | Base = config columns only; target = lat99; lake = same rabbitmq table with the runtime columns | 0.97 R² | **0.99 R²** | **+0.022** |
-| **scenarioK_kul** — MaMIMO indoor localisation | Base = sample-key + binary target *only* (no features); lake = 4 antenna CSI tables × 200 subcarrier features | 0.00 acc | **0.97 acc** | **+0.97** (50× compression: picked 15 of 800) |
+| **scenario2c** — synthetic feature recovery | Base = config columns only; target = lat99; lake = same rabbitmq table with the runtime columns | 0.54 R² (temporal split) | **0.99 R²** | **+0.45** |
+| **scenarioK_csi** — MaMIMO indoor localisation | Base = sample-key + binary target *only* (no features); lake = 16 antenna CSI tables × 200 subcarrier features | 0.00 acc | **1.00 acc** | **+1.00** (compresses a wide antenna lake to ~15 features) |
 
-The remaining 5 scenarios are deliberately negative — cross-application joins
+The remaining 4 scenarios are deliberately negative — cross-application joins
 (rabbitmq ↔ golang/python/amf) where no useful augmentation exists, and
-AutoFeat correctly refuses to introduce noise. Across all 7, AutoFeat tracks
+AutoFeat correctly refuses to introduce noise. Across all 6, AutoFeat tracks
 within 0.002 of BASE when there's nothing to gain, and prevents a 14-R²-point
 loss on scenario1 that the naïve `Join_All_BFS` baseline takes.
 
