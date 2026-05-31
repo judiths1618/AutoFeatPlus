@@ -374,16 +374,59 @@ with tab_results:
 
         st.divider()
         st.subheader("Feature importance drilldown")
-        approach = st.selectbox("Approach", scen_sum.approach.tolist())
+        st.caption(
+            "**Note on counts.** The `n_features` column above is the *input* "
+            "column count after feature selection (`len(join_path_features)`). "
+            "The bar chart below counts *AutoGluon-importance rows*, which can "
+            "exceed it because the AutoGluon feature generator decomposes "
+            "string-datetime and high-cardinality categorical columns into "
+            "sub-features (`dt.day`, `dt.dayofweek`, …)."
+        )
+        # Dedup the approach options — without it the selectbox has duplicates
+        # because the summary has one row per algorithm per approach.
+        approach_options = sorted(scen_sum.approach.unique())
+        approach = st.selectbox("Approach", approach_options)
         feats = load_features(scenario)
         feats = feats[(feats.approach == approach) & (feats.algorithm == algorithm)]
+
         if feats.empty:
-            st.write("(no feature importance recorded for this row)")
+            # Distinguish "model trained on 0 features" (e.g. K_csi BASE where
+            # the base table is just key+target) from "AutoGluon couldn't
+            # produce importance rows" (the dt.day-style crash caught by the
+            # try/except). Surface the n_features value if we have it.
+            nf_row = scen_sum[scen_sum.approach == approach]
+            if not nf_row.empty and int(nf_row["n_features"].iloc[0] or 0) == 0:
+                st.info(
+                    f"**{approach}** trained on 0 input features — typical for "
+                    f"information-poor scenarios (e.g. K_csi BASE = "
+                    f"`sample_key + target_x` only). Nothing to drill into."
+                )
+            else:
+                nf = int(nf_row["n_features"].iloc[0]) if not nf_row.empty else None
+                st.warning(
+                    "AutoGluon's `feature_importance(feature_stage=\"original\")` "
+                    "didn't return rows for this approach (the try/except in "
+                    "`run_auto_gluon` caught a `KeyError` — usually a string-"
+                    "datetime column whose decomposed sub-features were missing "
+                    "at evaluation). "
+                    + (f"`n_features` says **{nf}** input columns were used." if nf else "")
+                )
         else:
+            # Top-N slider — lets users sweep down K_csi's 3 200-feature tail
+            # for Join_All_BFS instead of being stuck at the first 20.
+            total = len(feats)
+            top_n = st.slider(
+                "Top N features by |importance|",
+                min_value=1,
+                max_value=int(min(total, 200)),  # cap UI at 200 to keep the chart legible
+                value=int(min(20, total)),
+                step=1 if total < 50 else 5,
+                help=f"This approach has {total:,} feature-importance rows in total.",
+            )
             top = (
                 feats.assign(abs_importance=feats.importance.abs())
                 .sort_values("abs_importance", ascending=False)
-                .head(20)
+                .head(top_n)
             )
             chart_imp = (
                 alt.Chart(top)
@@ -398,6 +441,16 @@ with tab_results:
                 .properties(height=24 * len(top))
             )
             st.altair_chart(chart_imp, use_container_width=True)
+
+            # Side tally: how many of the top-N features came from each source
+            # table. Quick read for "AutoFeatPlus on K_csi: 8 / 15 from antenna_08"
+            # without scrolling the chart.
+            with st.expander(f"Source-table tally for the top {top_n} features",
+                             expanded=False):
+                tally = (top.groupby("source_table").size()
+                         .reset_index(name="count")
+                         .sort_values("count", ascending=False))
+                st.dataframe(tally, use_container_width=True, hide_index=True)
 
 
 # ─── Tab 2: Compare ──────────────────────────────────────────────────────────
