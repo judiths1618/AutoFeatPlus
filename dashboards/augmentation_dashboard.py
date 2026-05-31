@@ -72,7 +72,14 @@ ALGORITHM_ALIASES = {"XGB": "XGBoost", "GBM": "LightGBM", "RF": "RandomForest", 
 
 @st.cache_data(show_spinner=False)
 def load_summaries() -> pd.DataFrame:
-    """Concat every `auto_pipeline_<label>_summary.csv`."""
+    """Concat every `auto_pipeline_<label>_summary.csv`.
+
+    Old result files left ``n_features`` at 0 for every approach except
+    AutoFeat — a tracking bug fixed at the source on 2026-05-31. To keep the
+    dashboard honest for previously-saved results, backfill ``n_features`` from
+    the per-scenario ``_features.csv`` row counts whenever the summary value is
+    missing or 0.
+    """
     rows = []
     for f in sorted(RESULTS_DIR.glob("auto_pipeline_*_summary.csv")):
         try:
@@ -85,7 +92,41 @@ def load_summaries() -> pd.DataFrame:
     if "algorithm" in df.columns:
         df["algorithm"] = df["algorithm"].replace(ALGORITHM_ALIASES)
         df = df.drop_duplicates(subset=["scenario", "approach", "algorithm"], keep="first")
+
+    # Backfill n_features from the features CSV when the summary CSV has 0.
+    if {"scenario", "approach", "algorithm"}.issubset(df.columns):
+        counts = _feature_counts_index()
+        if counts is not None and not counts.empty:
+            df = df.merge(counts, on=["scenario", "approach", "algorithm"],
+                          how="left", suffixes=("", "_from_features"))
+            if "n_features" not in df.columns:
+                df["n_features"] = 0
+            df["n_features"] = df["n_features"].where(
+                df["n_features"].fillna(0) > 0, df.get("n_features_from_features"))
+            df["n_features"] = pd.to_numeric(df["n_features"], errors="coerce").fillna(0).astype(int)
+            df = df.drop(columns=[c for c in df.columns if c.endswith("_from_features")])
     return df
+
+
+@st.cache_data(show_spinner=False)
+def _feature_counts_index() -> pd.DataFrame:
+    """Tally one row per (scenario, approach, algorithm) → n_features.
+
+    Reads every ``auto_pipeline_*_features.csv`` once and counts unique feature
+    names per group; cached so the merge in ``load_summaries`` stays cheap.
+    """
+    rows = []
+    for f in sorted(RESULTS_DIR.glob("auto_pipeline_*_features.csv")):
+        try:
+            fdf = pd.read_csv(f, usecols=["scenario", "approach", "algorithm", "feature"])
+        except Exception:
+            continue
+        g = (fdf.groupby(["scenario", "approach", "algorithm"])["feature"]
+             .nunique().reset_index(name="n_features_from_features"))
+        rows.append(g)
+    if not rows:
+        return pd.DataFrame(columns=["scenario", "approach", "algorithm", "n_features_from_features"])
+    return pd.concat(rows, ignore_index=True)
 
 
 @st.cache_data(show_spinner=False)
@@ -412,6 +453,34 @@ with tab_compare:
             if "AutoFeatPlus" in wide.columns and "BASE" in wide.columns:
                 wide["Δ AutoFeatPlus−BASE"] = (wide["AutoFeatPlus"] - wide["BASE"]).round(4)
             st.dataframe(wide, use_container_width=True)
+
+        # ── Feature counts panel ────────────────────────────────────────────
+        # How many features each method *actually used* per scenario. Reveals
+        # the compression story (AutoFeatPlus hard-capped at top_k, K_csi's
+        # 3200 → 213 → 15 funnel, scenarios where AutoFeat picks 0 lake
+        # features and the "lift" is really just the trivial-self-join detour).
+        st.subheader("Feature counts (number of features each method selected)")
+        if "n_features" in sub.columns:
+            counts_pivot = (
+                sub.pivot_table(index="scenario", columns="approach",
+                                values="n_features", aggfunc="first")
+                .reindex(columns=[a for a in APPROACHES if a in sub.approach.unique()])
+                .fillna(0).astype(int)
+            )
+            st.dataframe(counts_pivot, use_container_width=True)
+            with st.expander("How to read this", expanded=False):
+                st.markdown(
+                    "- `BASE` ≈ base-table column count (target excluded).\n"
+                    "- `Join_All_BFS` = every column the BFS join reached.\n"
+                    "- `Join_All_BFS_Filter` ≈ Spearman top-half cut.\n"
+                    "- `AutoFeat` = mRMR-style relevance/redundancy selection.\n"
+                    "- `AutoFeatPlus` is hard-capped at `--autofeat-plus-top-k` "
+                    "(default 15) and policy-aware — a row that equals BASE "
+                    "means AutoFeat picked **zero lake features** even though "
+                    "the lake was reachable. Compare against the Δ vs BASE "
+                    "pivot above to spot scenarios where the headline lift is "
+                    "intra-base feature selection rather than augmentation."
+                )
 
         if manifest:
             st.subheader("Scenario context")

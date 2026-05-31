@@ -211,6 +211,11 @@ def run_auto_gluon(
             accuracy=accuracy,
             feature_importance=feature_importance,
             join_path_features=join_path_features,
+            # Populate n_features here so every approach that goes through
+            # `run_auto_gluon` (BASE, JOIN_ALL_BFS, Filter, AutoFeatPlus, …)
+            # has the count set — previously only the AutoFeat path bothered,
+            # leaving the SUMMARY column at 0 for every other row.
+            n_features=len(join_path_features),
             split_mode=split_mode,
         )
         results.append(entry)

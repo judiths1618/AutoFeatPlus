@@ -1,27 +1,48 @@
-# Data Augmentation by using AutoFeat — 6G-DALI Feature Discovery and Time-Series Benchmarks
+# Join-Path-based Data Augmentation — 6G-DALI Feature Discovery and Time-Series Benchmarks
 
-This repository contains reproducible experiments for two related, but distinct,
-questions on 6G telemetry data:
+This repository is a **methodology-hardened, 5G/6G-tailored fork of the
+original AutoFeat join-path discovery system**
+([*"AutoFeat: Transitive Feature Discovery over Join Paths"*](docs/assets/papers/ICDE_FeatureDiscovery.pdf),
+ICDE). The original BFS-discovery + mRMR-selection core in
+[`src/feature_discovery/autofeat_pipeline/`](src/feature_discovery/autofeat_pipeline/)
+is preserved verbatim; everything around it has been re-targeted at real
+5G/6G telemetry workloads, made reproducible, and stress-tested against the
+methodological footguns that affected the published results.
 
-1. **AutoFeat feature discovery**: can a base table be improved by discovering
-   joinable tables and selecting useful external tabular features?
-2. **Time-series augmentation**: can train-only time-series transformations
-   improve forecasting on real, unchanged test windows?
+It answers two distinct questions on 5G/6G telemetry data:
 
-These are different method families. AutoFeat/AutoFeatPlus widens a tabular
-feature matrix through joins. Time-series augmentation creates additional
-training windows or rows. The optional downstream bridge experiments ask whether
-time-series-style augmentation helps a later tabular application, but those rows
-should not be treated as the primary score for either method family.
+1. **AutoFeat feature discovery on telemetry tables** — can a base table from a
+   5G/6G core-network function or cloud-side microservice be improved by
+   discovering joinable peer tables and selecting useful external tabular
+   features?
+2. **Time-series augmentation on the same telemetry** — can train-only
+   time-series transformations improve forecasting on real, unchanged test
+   windows?
 
-The original AutoFeat paper README is preserved at
-[docs/legacy/README_AutoFeat_paper.md](docs/legacy/README_AutoFeat_paper.md).
+These are different method families. AutoFeat / AutoFeatPlus widens a tabular
+feature matrix through joins; time-series augmentation creates additional
+training windows or rows. The optional downstream bridge experiments ask
+whether time-series-style augmentation helps a later tabular application, but
+those rows should not be treated as the primary score for either method family.
+
+### What "tailored to 5G/6G" actually means here
+
+| Aspect | The fork's choice (vs. the original AutoFeat) |
+|---|---|
+| **Datasets** | Real 5G/6G testbed and wireless measurements — EUR 6907619 microservice latency (rabbitmq / golang-web / python-web / AMF), KUL MaMIMO indoor-localisation CSI (4–16 antennas × 200 subcarriers). The original benchmark used Kaggle-style tabular datasets. |
+| **Temporal-first evaluation** | Every approach (`BASE / JOIN_ALL / Filter / AutoFeat / AutoFeatPlus`) is evaluated on the *same* chronological 80/20 window when `--temporal-key` is set, so Δ comparisons are like-for-like under genuine time-series leakage rules — required for any 5G/6G stream. The original used random splits. |
+| **`merge_asof` is the default join** | Exact-time matches across cloud microservices are rare under realistic 5G/6G observation cadence; `pd.merge_asof` (with `tolerance` and `direction` properly typed and unit-aware) is the default for any temporal join. The original supported only exact joins. |
+| **6G-specific scenario suite** | The 9 benchmark scenarios are explicitly tagged 🟢 positive / 🔴 negative / 🟡 ambiguous and built from the 5G/6G datasets — including `scenarioR_resource` (cross-service resource-contention positive) and `scenarioU_unrelated` (heterogeneous-lake refusal) that the original AutoFeat benchmarks didn't cover. |
+| **Operator-friendly privacy policies** | `EUR_POLICY_PRESETS` for AutoFeatPlus targets 5G/6G operator concerns: `time-private`, `resource-private`, `workload-private`, `target-proxy-private`. The original AutoFeatPlus had inline-only patterns scattered across the benchmark script. |
+
+The original AutoFeat paper's README is preserved verbatim at
+[docs/legacy/README_AutoFeat_paper.md](docs/legacy/README_AutoFeat_paper.md)
+for one-click comparison.
 
 ## Improvements over the original AutoFeat
 
 This repository keeps the original BFS-discovery / mRMR feature-selection core
-([autofeat_pipeline/](src/feature_discovery/autofeat_pipeline/)) intact but fixes
-several methodology and reliability issues that affected the published results.
+([autofeat_pipeline/](src/feature_discovery/autofeat_pipeline/)) intact but fixes several methodology and reliability issues that affected the published results.
 Each row below points at the code that changed.
 
 ### Methodology
@@ -52,7 +73,6 @@ Each row below points at the code that changed.
 - **Privacy-safe logging** — `config.rel()` renders every printed path relative to the project root, so neither absolute paths nor your username leak into console output, run logs or committed result files.
 - **Inline graph view in the Streamlit dashboard** — `tab_graph` now renders an interactive Graphviz of the live Neo4j graph (or any picked scenario's `connections.csv`) with degree-weighted node sizes, weight-thresholded edge filters, and a top-table panel — instead of just listing Cypher snippets.
 - **CI runs every test, not just one file** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) discovers `test_*.py` under `src/` with `pytest`. [`conftest.py`](conftest.py) at the repo root puts `src/` on `sys.path` so `pytest` works without `PYTHONPATH`.
-- **Bandwidth-friendly checkout** — `datasets/` is git-ignored; this version's checkout went from 15 GB to 45 MB on origin (the raw 6G datasets stay external).
 - **Time-gap segmenter** for any EUR telemetry CSV with a `time` column → [`scripts/split_eur_by_time_gaps.py`](scripts/split_eur_by_time_gaps.py).
 - **One-shot runner for the whole benchmark** — [`scripts/run_all_scenarios.sh`](scripts/run_all_scenarios.sh).
 
@@ -457,6 +477,11 @@ streamlit run dashboards/augmentation_dashboard.py
 | **Run on your data** | Upload a base table + lake CSVs (+ optional `connections.csv` and `metadata.txt`) and trigger the pipeline |
 | **Graph** | Three pickers: **Source** (`Live Neo4j` or any scenario), **Method** (`All discovered edges` or one of `BASE` / `Join_All_BFS` / `Filter` / `AutoFeat` / `AutoFeatPlus`), **Algorithm** (`XGBoost` / `RandomForest`). Method mode draws **only the tables that method actually used**, sized by feature count, with a side panel listing every selected feature ranked by \|importance\|. Useful for "why did AutoFeat lift but AutoFeatPlus didn't?" — switch Method on scenarioR_resource and you'll see AutoFeat lit up 4 tables while AutoFeatPlus only used 1 |
 
+Time-series augmentation results (Track B + Track C) are written to
+`results/6g_data/darts/evaluation_summary.csv` and
+`results/6g_data/downstream/ts_augmented_downstream.csv`. They are **not**
+surfaced in the dashboard — inspect them directly with `pandas` or your editor.
+
 If `streamlit` is missing, install it in the active environment:
 
 ```bash
@@ -527,7 +552,7 @@ for scenarioR_resource and you'll see this visually — AutoFeat lights up 4
 tables (base + 3 peer-service `*-resources.csv`); AutoFeatPlus lights up only
 1 (base alone).
 
-Time-series augmentation:
+<!-- Time-series augmentation:
 
 - RabbitMQ forecasting is the most augmentation-sensitive in the current Darts
   results.
@@ -541,7 +566,7 @@ Bridge utility:
 
 - The downstream smoke result currently shows that augmentation can help Darts
   forecasting while still hurting a downstream tabular Ridge task. This is why
-  the dashboard and README keep the method families separate.
+  the dashboard and README keep the method families separate. -->
 
 ## Troubleshooting
 

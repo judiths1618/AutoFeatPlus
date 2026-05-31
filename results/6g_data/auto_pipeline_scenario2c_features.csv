@@ -64,7 +64,7 @@ scenario2c,AutoFeat,XGBoost,scenario2c/rabbitmq-reduced.csv.time,rabbitmq-reduce
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-reduced.csv.n,rabbitmq-reduced.csv,23023526.924415804
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-features.csv.cpu_usage,rabbitmq-features.csv,18149553.357985787
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-reduced.csv.cpu_limit,rabbitmq-reduced.csv,11252759.117606938
-scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-features.csv.n,rabbitmq-features.csv,8893746.706080068
+scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-features.csv.n,rabbitmq-features.csv,8893746.706046982
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-reduced.csv.ram_limit,rabbitmq-reduced.csv,47988.14655434601
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-features.csv.ram_limit,rabbitmq-features.csv,42975.08468772769
 scenario2c,AutoFeat,RandomForest,scenario2c/rabbitmq-reduced.csv.time,rabbitmq-reduced.csv,0.0
