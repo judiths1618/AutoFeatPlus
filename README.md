@@ -1,4 +1,4 @@
-# Join-Path-based Data Augmentation — 6G-DALI Feature Discovery and Augmentation Scenarios
+# AutoFeatPlus
 
 This repository is a **methodology-hardened, 5G/6G-tailored fork of the
 original AutoFeat join-path discovery system**
@@ -276,7 +276,7 @@ Available scenario keys (positive / negative / ambiguous):
 | `r`  | `scenarioR_resource` | 🟢 positive | Cross-app resource-contention augmentation; lake has only `(time, ram_usage, cpu_usage)` per peer service |
 | `k`  | `scenarioK_csi` | 🟢 positive | Wide MaMIMO CSI lake (16 antenna tables, `user_id`/`sample_id` dropped) — discovery + compression |
 | `1` | `scenario1` | 🔴 negative | Per-`n` aggregated cross-app lake; joined columns are `f(n)` only, no new info |
-| `n` | `scenarioN_target_n` | 🔴 negative | Inverse target `n`; cross-app `n` matches rabbitmq's on ~3.5 % → refusal |
+| `n` | `scenarioN_target_n` | 🔴 negative | Inverse target `n`; shallow cross-app lake with only top-level EUR service tables → refusal |
 | `u` | `scenarioU_unrelated` | 🔴 negative | Heterogeneous unrelated lake (rabbitmq base + KUL CSI lake); no shared key |
 | `a_lat95` | `scenarioA_lat95` | 🟡 ambiguous | Cross-app temporal (asof); lakes stripped of `lat*`/`min`/`mean` |
 | `a_lat99` | `scenarioA_lat99` | 🟡 ambiguous | Same as `a_lat95` with target `lat99` |
@@ -528,7 +528,7 @@ XGBoost (representative snapshot — re-run with `make demo` or `bash scripts/ru
 | 🟢 P | `scenarioR_resource` (cross-app contention, no target overlap) | 0.5395 | **0.9724** | 0.5373 | **+0.433** | −0.002 |
 | 🟢 P | `scenarioK_csi` (wide-lake compression, identity-free) | 0.0000 | **1.0000** | 0.9948 | **+1.000** | **+0.995** |
 | 🔴 N | `scenario1` (per-`n` aggregated, structurally degenerate) | 0.9662 | 0.9662 | 0.9454 | 0.000 | −0.021 |
-| 🔴 N | `scenarioN_target_n` (inverse target) | 0.9786 | 0.9794 | 0.9158 | +0.001 | −0.063 |
+| 🔴 N | `scenarioN_target_n` (inverse target) | 0.9786 | 0.9784 | 0.9717 | −0.000 | −0.007 |
 | 🔴 N | `scenarioU_unrelated` (heterogeneous lake — KUL → rabbitmq) | 0.9508 | 0.9765 | 0.9508 | +0.026† | 0.000 |
 | 🟡 A | `scenarioA_lat95` (cross-app temporal, lake `lat*` stripped) | 0.9551 | 0.9796 | 0.9048 | +0.025 | −0.050 |
 | 🟡 A | `scenarioA_lat99` (cross-app temporal, lake `lat*` stripped) | 0.9508 | 0.9765 | 0.8845 | +0.026 | −0.066 |
@@ -541,8 +541,8 @@ What this tells us:
 - **AutoFeat lifts where lake information genuinely exists** (2C: missing
   runtime; K_csi: wide CSI lake; B: AMF segment pooling).
 - **AutoFeat refuses cleanly** when there's nothing to add (scenario1's per-`n`
-  collapse to `f(n)`; scenarioN's cross-app `n` that agrees on only 3.5 % of
-  matched rows; scenarioU's heterogeneous KUL lake).
+  collapse to `f(n)`; scenarioN's shallow top-level cross-app EUR lake;
+  scenarioU's heterogeneous KUL lake).
 - **Ambiguous lifts are small** (~±0.03) — within the noise of feature
   selection on the joined frame.
 
@@ -558,7 +558,7 @@ generator decomposition):
 | 🟢 P | scenarioR_resource | 4 | 8 | 4 | **4** | 4 |
 | 🟢 P | scenarioK_csi | 0 | **3 200** | 1 600 | **73** | **15** |
 | 🔴 N | scenario1 | 5 | 28 | 14 | 5 | 10 |
-| 🔴 N | scenarioN_target_n | 10 | 446 | 223 | 14 | 15 |
+| 🔴 N | scenarioN_target_n | 10 | 56 | 28 | 10 | 15 |
 | 🔴 N | scenarioU_unrelated | 6 | 6 | 4 | 6 | 6 |
 | 🟡 A | scenarioA_lat95 / lat99 | 6 | 22 | 11 | **6** | 16 |
 | 🟡 A | scenarioB_amf_seg01 | 6 | 38 | 20 | 28 | 16 |

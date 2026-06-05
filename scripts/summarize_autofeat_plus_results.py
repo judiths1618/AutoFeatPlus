@@ -7,11 +7,24 @@ from typing import Any
 
 import pandas as pd
 
+ROOT = Path(__file__).resolve().parents[1]
+
 
 DEFAULT_PATTERNS = [
+    "results/6g_data/summary.csv",
     "results/6g_data/kul_autofeat_plus*.csv",
     "results/6g_data/EUR/*autofeat_plus*.csv",
 ]
+
+
+def display_path(path: Path | str | None) -> str:
+    if path is None:
+        return ""
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 
 def parse_list(value: Any) -> list[Any]:
@@ -27,11 +40,13 @@ def parse_list(value: Any) -> list[Any]:
 
 
 def infer_dataset_family(path: Path, row: pd.Series) -> str:
-    data_label = str(row.get("data_label", ""))
+    data_label = str(row.get("data_label", row.get("scenario", "")))
     if data_label.startswith("EUR/") or "/EUR/" in str(path):
         return "EUR"
-    if data_label.startswith("kul_") or "kul_" in str(path):
+    if data_label.startswith("kul_") or "kul_" in str(path) or "scenarioK_csi" in data_label:
         return "KUL"
+    if data_label.startswith("scenario"):
+        return "6G-scenario"
     return "unknown"
 
 
@@ -39,6 +54,10 @@ def infer_privacy_policy(path: Path, row: pd.Series) -> str:
     join_name = row.get("join_name", "")
     if isinstance(join_name, str) and join_name and join_name != "nan":
         return join_name.split(";", 1)[0]
+
+    scenario = row.get("scenario", "")
+    if isinstance(scenario, str) and scenario and scenario != "nan":
+        return scenario
 
     test_groups = row.get("test_groups", "")
     if isinstance(test_groups, str) and ";" in test_groups:
@@ -109,9 +128,9 @@ def normalize_results(path: Path) -> pd.DataFrame:
 
         rows.append(
             {
-                "source_file": str(path),
+                "source_file": display_path(path),
                 "dataset_family": infer_dataset_family(path, row),
-                "data_label": row.get("data_label", ""),
+                "data_label": row.get("data_label", row.get("scenario", "")),
                 "target_column": "lat99" if "EUR" in str(path) else "target_x",
                 "privacy_policy": infer_privacy_policy(path, row),
                 "privacy_mode": infer_privacy_mode(row),
@@ -228,7 +247,7 @@ def main() -> None:
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     summary.to_csv(args.output, index=False)
-    print(f"Saved {len(summary)} summary rows to {args.output}")
+    print(f"Saved {len(summary)} summary rows to {display_path(args.output)}")
     if not summary.empty:
         display_columns = [
             "dataset_family",

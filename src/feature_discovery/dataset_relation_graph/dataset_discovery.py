@@ -13,7 +13,7 @@ from valentine.algorithms import DistributionBased
 from valentine.algorithms import SimilarityFlooding  
 
 
-from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE
+from feature_discovery.config import DATA_FOLDER, CONNECTIONS, PROFILE, rel
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 import datasketch
 from feature_discovery.helpers.buildProfile import buildingProfile, collectLshProfiles
@@ -40,8 +40,8 @@ def profile_valentine_logic(files: List[str], valentine_threshold: float = 0.55)
     def profile(table_pair):
         (tab1, tab2) = table_pair
 
-        a_table_path = tab1.partition(f"{DATA_FOLDER}/")[2]
-        b_table_path = tab2.partition(f"{DATA_FOLDER}/")[2]
+        a_table_path = rel(tab1)
+        b_table_path = rel(tab2)
 
         a_table_name = a_table_path.split("/")[-1]
         b_table_name = b_table_path.split("/")[-1]

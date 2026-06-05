@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from feature_discovery.experiments.autofeat_plus import select_autofeat_plus_features
-from feature_discovery.config import AUTO_GLUON_FOLDER
+from feature_discovery.config import AUTO_GLUON_FOLDER, rel
 from feature_discovery.experiments.local_benchmark_utils import join_antenna_tables, make_kul_split
 from feature_discovery.experiments.result_object import Result
 
@@ -276,8 +276,8 @@ def main() -> None:
     args.feature_scores_output.parent.mkdir(parents=True, exist_ok=True)
     autofeat_plus_selection.feature_scores.to_csv(args.feature_scores_output, index=False)
     pd.DataFrame([vars(result) for result in all_results]).to_csv(args.output, index=False)
-    print(f"Saved {len(all_results)} results to {args.output}")
-    print(f"Saved AutoFeatPlus feature scores to {args.feature_scores_output}")
+    print(f"Saved {len(all_results)} results to {rel(args.output)}")
+    print(f"Saved AutoFeatPlus feature scores to {rel(args.feature_scores_output)}")
 
 
 if __name__ == "__main__":

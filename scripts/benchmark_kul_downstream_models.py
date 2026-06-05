@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from feature_discovery.config import rel
 from feature_discovery.experiments.autofeat_plus import select_autofeat_plus_features
 from feature_discovery.experiments.local_benchmark_utils import join_antenna_tables, make_kul_split
 
@@ -293,7 +294,7 @@ def main() -> None:
     output_df = pd.DataFrame(rows)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     output_df.to_csv(args.output, index=False)
-    print(f"Saved downstream KUL benchmark results to {args.output}")
+    print(f"Saved downstream KUL benchmark results to {rel(args.output)}")
 
 
 if __name__ == "__main__":

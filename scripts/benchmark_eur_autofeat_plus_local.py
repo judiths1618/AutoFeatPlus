@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from feature_discovery.config import AUTO_GLUON_FOLDER
+from feature_discovery.config import AUTO_GLUON_FOLDER, rel
 from feature_discovery.experiments.autofeat_plus import (
     EUR_POLICY_PRESETS,
     score_features,
@@ -356,8 +356,8 @@ def main() -> None:
     args.feature_scores_output.parent.mkdir(parents=True, exist_ok=True)
     feature_scores_frame.to_csv(args.feature_scores_output, index=False)
     result_frame.to_csv(args.output, index=False)
-    print(f"Saved {len(result_frame)} results to {args.output}")
-    print(f"Saved AutoFeatPlus feature scores to {args.feature_scores_output}")
+    print(f"Saved {len(result_frame)} results to {rel(args.output)}")
+    print(f"Saved AutoFeatPlus feature scores to {rel(args.feature_scores_output)}")
     print(f"Policies: {[','.join(policy) for policy in policy_runs]}")
 
 

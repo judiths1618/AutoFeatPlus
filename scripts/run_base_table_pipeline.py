@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
 from feature_discovery.pipelines.base_table_pipeline import run_base_table_pipeline
+from feature_discovery.config import rel
 
 
 def main() -> None:
@@ -39,7 +41,7 @@ def main() -> None:
     parser.add_argument("--dataset-type", default="regression")
     parser.add_argument(
         "--python-bin",
-        default=str(Path.home() / "miniconda3" / "envs" / "autofeat-py3.10" / "bin" / "python"),
+        default=os.getenv("AUTOFEAT_PYTHON", "python"),
     )
     args = parser.parse_args()
 
@@ -67,21 +69,21 @@ def main() -> None:
     )
 
     print(f"Run directory: {artifacts.run_dir}")
-    print(f"Candidate relationships: {artifacts.candidate_relationships_path}")
-    print(f"Recommended connections: {artifacts.recommended_connections_path}")
-    print(f"Connections CSV: {artifacts.connections_path}")
-    print(f"Relationship report: {artifacts.relationship_report_path}")
-    print(f"Benchmark plan: {artifacts.benchmark_plan_path}")
-    print(f"Use cases: {artifacts.use_cases_path}")
-    print(f"Pipeline summary: {artifacts.pipeline_summary_path}")
+    print(f"Candidate relationships: {rel(artifacts.candidate_relationships_path)}")
+    print(f"Recommended connections: {rel(artifacts.recommended_connections_path)}")
+    print(f"Connections CSV: {rel(artifacts.connections_path)}")
+    print(f"Relationship report: {rel(artifacts.relationship_report_path)}")
+    print(f"Benchmark plan: {rel(artifacts.benchmark_plan_path)}")
+    print(f"Use cases: {rel(artifacts.use_cases_path)}")
+    print(f"Pipeline summary: {rel(artifacts.pipeline_summary_path)}")
     if artifacts.benchmark_report_path is not None:
-        print(f"Benchmark report: {artifacts.benchmark_report_path}")
+        print(f"Benchmark report: {rel(artifacts.benchmark_report_path)}")
     if artifacts.benchmark_results_path is not None:
-        print(f"Benchmark results: {artifacts.benchmark_results_path}")
+        print(f"Benchmark results: {rel(artifacts.benchmark_results_path)}")
     if artifacts.graph_report_path is not None:
-        print(f"Graph-mode report: {artifacts.graph_report_path}")
+        print(f"Graph-mode report: {rel(artifacts.graph_report_path)}")
     if artifacts.graph_results_path is not None:
-        print(f"Graph-mode results: {artifacts.graph_results_path}")
+        print(f"Graph-mode results: {rel(artifacts.graph_results_path)}")
 
 
 if __name__ == "__main__":

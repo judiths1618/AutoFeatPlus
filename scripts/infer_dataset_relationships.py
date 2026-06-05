@@ -14,6 +14,7 @@ from feature_discovery.dataset_relation_graph.hybrid_discovery import (
     infer_dataset_relationships,
     recommend_connections,
 )
+from feature_discovery.config import rel
 
 
 def main() -> None:
@@ -63,9 +64,9 @@ def main() -> None:
     )
     report_path.write_text(report, encoding="utf-8")
 
-    print(f"Saved candidate relationships to {relationships_path}")
-    print(f"Saved recommended connections to {recommended_path}")
-    print(f"Saved report to {report_path}")
+    print(f"Saved candidate relationships to {rel(relationships_path)}")
+    print(f"Saved recommended connections to {rel(recommended_path)}")
+    print(f"Saved report to {rel(report_path)}")
 
 
 if __name__ == "__main__":

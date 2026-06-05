@@ -4,7 +4,7 @@ prepare_augmentation_scenarios.py
 One-stop builder for all benchmark scenarios consumed by the
 `feature_discovery.auto_pipeline` CLI.
 
-Each scenario writes to its own subdirectory under datasets/ with:
+Each scenario writes to its own subdirectory under scenarios/ with:
   - the base table (CSV)
   - lake tables (CSVs)
   - metadata.txt (column descriptions for transformer discovery)
@@ -23,6 +23,7 @@ Scenarios
   a_x   — Cross-app temporal (rabbitmq-reduced + golang/python/amf full, target lat95)
   a_99  — Same as a_x but target lat99
   b     — Within-app via segments (amf seg01 + other amf segments, join on n)
+  n     — Inverse target n (rabbitmq + top-level golang/python/amf tables only)
   k     — KUL CSI (samples_base + per-antenna csi_as_features tables)
   r     — Cross-app resource contention (positive, no target-name leakage)
   u     — Heterogeneous unrelated lake (negative, schema discovery should refuse)
@@ -291,8 +292,29 @@ def build_scenarioK(antennas: List[int] = None) -> None:
 # ─── Scenario N — target=n on full rabbitmq ──────────────────────────────────
 def build_scenarioN() -> None:
     print("[scenarioN] target=n (full rabbitmq + cross-app lake)")
-    # Uses the EUR data dir directly; no new files needed. Just confirm.
-    print(f"  uses {EUR} as data-dir; no new files (pipeline reads in-place).")
+    dst = OUT / "scenarioN_target_n"
+    dst.mkdir(parents=True, exist_ok=True)
+
+    # Keep this scenario's data-dir shallow. The pipeline ingests CSVs
+    # recursively, so pointing it at datasets/EUR/6907619 would also include
+    # split_output/*.csv and turn this into a within-rabbitmq segment scenario.
+    for fname in [
+        "rabbitmq-performance.csv",
+        "golang-web-server-performance.csv",
+        "python-web-server-performance.csv",
+        "amf-performance.csv",
+    ]:
+        shutil.copy(EUR / fname, dst / fname)
+        df = pd.read_csv(dst / fname, nrows=0)
+        print(f"  {fname}: cols={len(df.columns)}")
+
+    _write_metadata(dst / "metadata.txt", """
+Scenario N — inverse workload target. Base is the full rabbitmq table with n as
+the prediction target. Lake contains only the top-level golang/python/amf
+service tables from the EUR data, with no split_output segment tables included.
+Transformer discovery may propose temporal cross-app joins, but the intended
+test is whether AutoFeat refuses cross-app augmentation for this inverse target.
+""")
 
 
 # ─── Scenario R — cross-app resource contention (honest positive) ────────────

@@ -162,7 +162,9 @@ paths_*.csv
 tfd/*
 *nohup*.out.DS_Store
 data/
-datasets/
+# datasets/KUL/csi_data
+# datasets/KUL/Ultra Dense Indoor MaMIMO CSI Dataset/ 
+datasets/KUL/
 *.zip
 *.tar
 *.tar.gz

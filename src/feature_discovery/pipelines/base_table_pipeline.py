@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -21,6 +22,7 @@ from feature_discovery.experiments.benchmark_scenarios import (
     infer_base_table_use_cases,
     use_case_titles,
 )
+from feature_discovery.config import rel
 
 
 @dataclass
@@ -91,7 +93,7 @@ def _write_pipeline_summary(
         "use_case_slugs": use_case_slugs,
         "join_plan": plan,
         "privacy_policy": privacy_policy,
-        "benchmark_results_path": str(benchmark_results_path) if benchmark_results_path else None,
+        "benchmark_results_path": rel(benchmark_results_path) if benchmark_results_path else None,
     }
     path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
@@ -218,7 +220,7 @@ def run_base_table_pipeline(
     python_bin: str | None = None,
 ) -> BaseTablePipelineArtifacts:
     benchmark_models = benchmark_models or ["ridge", "rf", "xt", "gbr"]
-    python_bin = python_bin or str(Path.home() / "miniconda3" / "envs" / "autofeat-py3.10" / "bin" / "python")
+    python_bin = python_bin or os.getenv("AUTOFEAT_PYTHON", "python")
     run_dir = output_dir / data_dir.name / base_table.removesuffix(".csv")
     run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -304,12 +306,11 @@ def run_base_table_pipeline(
     if run_benchmark and plan["join_tables"]:
         benchmark_results_path = run_dir / "benchmark_results.csv"
         root = Path(__file__).resolve().parents[3]
-        benchmark_script = root / "downstream ML" / "benchmark_eur_augmented.py"
         command = [
             python_bin,
-            str(benchmark_script),
+            str(Path("downstream ML") / "benchmark_eur_augmented.py"),
             "--data-dir",
-            str(data_dir),
+            rel(data_dir),
             "--base-table",
             plan["base_table"],
             "--join-tables",
@@ -331,13 +332,13 @@ def run_base_table_pipeline(
             "--policy",
             *privacy_policy,
             "--output",
-            str(benchmark_results_path),
+            rel(benchmark_results_path),
         ]
         if autofeatplus_results_csv is not None:
-            command.extend(["--autofeatplus-results-csv", str(autofeatplus_results_csv)])
+            command.extend(["--autofeatplus-results-csv", rel(autofeatplus_results_csv)])
         if autofeatplus_algorithm:
             command.extend(["--autofeatplus-algorithm", autofeatplus_algorithm])
-        subprocess.run(command, check=True)
+        subprocess.run(command, check=True, cwd=root)
         benchmark_report_path = run_dir / "benchmark_report.md"
         benchmark_report_path.write_text(
             _build_benchmark_report(

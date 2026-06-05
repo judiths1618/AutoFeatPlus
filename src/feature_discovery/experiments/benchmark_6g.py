@@ -34,7 +34,7 @@ from typing import List, Optional
 
 import pandas as pd
 
-from feature_discovery.config import DATA_FOLDER, RESULTS_FOLDER
+from feature_discovery.config import DATA_FOLDER, RESULTS_FOLDER, rel
 from feature_discovery.dataset_relation_graph.ingest_data import ingest_data_with_pk_fk
 from feature_discovery.graph_processing.neo4j_transactions import clear_graph
 from feature_discovery.experiments.ablation import autofeat, autofeat_plus
@@ -147,7 +147,7 @@ def run_scenario(
     RESULTS_FOLDER.mkdir(parents=True, exist_ok=True)
     out_path = RESULTS_FOLDER / f"benchmark_6g_{label}.csv"
     pd.DataFrame([vars(r) for r in all_results]).to_csv(out_path, index=False)
-    print(f"\nSaved {len(all_results)} results → {out_path}")
+    print(f"\nSaved {len(all_results)} results → {rel(out_path)}")
 
     return all_results
 
@@ -247,7 +247,7 @@ def main() -> None:
     print("BENCHMARK SUMMARY  (mean_score: R² for regression, accuracy for classification)")
     print(f"{'='*60}")
     print(summary.to_string(index=False))
-    print(f"\nSaved → {summary_path}")
+    print(f"\nSaved → {rel(summary_path)}")
 
 
 if __name__ == "__main__":

@@ -16,7 +16,20 @@ import numpy as np
 import pandas as pd
 
 
-os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/matplotlib")
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def display_path(path: Path | str | None) -> str | None:
+    if path is None:
+        return None
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
+
+
+os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache") / "matplotlib"))
 logging.getLogger("pytorch_lightning").setLevel(logging.ERROR)
 logging.getLogger("lightning.pytorch").setLevel(logging.ERROR)
 warnings.filterwarnings("ignore", category=RuntimeWarning, module=r"sklearn\..*")
@@ -861,12 +874,12 @@ def save_metadata(
         "backend": "darts",
         "args": vars(args)
         | {
-            "data_dir": str(args.data_dir),
-            "output": str(args.output),
-            "predictions_dir": str(args.predictions_dir),
-            "metadata_dir": str(args.metadata_dir),
-            "augmented_dir": str(args.augmented_dir),
-            "profile_output": str(args.profile_output),
+            "data_dir": display_path(args.data_dir),
+            "output": display_path(args.output),
+            "predictions_dir": display_path(args.predictions_dir),
+            "metadata_dir": display_path(args.metadata_dir),
+            "augmented_dir": display_path(args.augmented_dir),
+            "profile_output": display_path(args.profile_output),
         },
         "model": model_name,
         "augmentation_method": augmentation_method,
@@ -879,7 +892,7 @@ def save_metadata(
         "train_windows": windows.train_times,
         "val_windows": windows.val_times,
         "test_windows": windows.test_times,
-        "output_path": str(output_path),
+        "output_path": display_path(output_path),
     }
     metadata_path = args.metadata_dir / f"{run_id}.json"
     metadata_path.write_text(json.dumps(metadata, indent=2), encoding="utf-8")
@@ -893,7 +906,7 @@ def append_results(output: Path, rows: list[dict[str, Any]]) -> None:
         if column not in new_df.columns:
             new_df[column] = np.nan
     new_df = new_df[RESULT_COLUMNS]
-    if output.exists():
+    if output.exists() and os.getenv("AUTOFEAT_APPEND_RESULTS", "0") == "1":
         old_df = pd.read_csv(output)
         combined = pd.concat([old_df, new_df], ignore_index=True)
         combined = combined.drop_duplicates(subset=["run_id"], keep="last")
@@ -975,8 +988,8 @@ def run_one(
                 "model_family": family,
                 "train_time_seconds": train_time,
                 "predict_time_seconds": predict_time,
-                "output_path": str(output_path),
-                "metadata_path": str(metadata_path),
+                "output_path": display_path(output_path),
+                "metadata_path": display_path(metadata_path),
                 "n_train_windows": len(x_train_aug),
             }
         )
@@ -1009,7 +1022,7 @@ def main() -> None:
     raw_dataframe = load_eur_table(args.data_dir, args.dataset, args.time_column)
     target_columns = resolve_target_columns(raw_dataframe, args)
     profile_path = write_profile(raw_dataframe, args.dataset, args.time_column, target_columns[0], args.profile_output)
-    print(f"Saved profile to {profile_path}")
+    print(f"Saved profile to {display_path(profile_path)}")
     if args.profile_only:
         return
 
@@ -1028,7 +1041,7 @@ def main() -> None:
         args.target_column = original_target
 
     append_results(args.output, rows)
-    print(f"Saved evaluation rows to {args.output}")
+    print(f"Saved evaluation rows to {display_path(args.output)}")
     display_columns = [
         "dataset",
         "task",

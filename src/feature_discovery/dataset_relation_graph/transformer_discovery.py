@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 from tqdm import tqdm
 
-from feature_discovery.config import CONNECTIONS, DATA_FOLDER
+from feature_discovery.config import CONNECTIONS, DATA_FOLDER, rel
 from feature_discovery.graph_processing.neo4j_transactions import merge_nodes_relation_tables
 
 logger = logging.getLogger(__name__)
@@ -54,7 +54,7 @@ def parse_metadata(metadata_path: Path) -> Dict[str, Dict[str, str]]:
     ``"<col>: <col>"`` upstream (this function only emits what it parsed).
     """
     if not metadata_path.exists():
-        logger.warning(f"metadata.txt not found at {metadata_path}; falling back to column names only")
+        logger.warning("metadata.txt not found at %s; falling back to column names only", rel(metadata_path))
         return {}
 
     text = metadata_path.read_text(encoding="utf-8")

@@ -8,6 +8,8 @@ from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
+from feature_discovery.config import rel
+
 
 @dataclass
 class AugmentationResult:
@@ -78,8 +80,8 @@ class AugmentationResult:
             "selected_features": self.selected_features,
             "selected_join_path": self.selected_join_path,
             "summary": self.summary.to_dict(orient="records") if not self.summary.empty else [],
-            "summary_path": str(self.summary_path) if self.summary_path else None,
-            "augmented_path": str(self.augmented_path) if self.augmented_path else None,
+            "summary_path": rel(self.summary_path) if self.summary_path else None,
+            "augmented_path": rel(self.augmented_path) if self.augmented_path else None,
             "base_accuracy": self.base_accuracy,
             "autofeat_accuracy": self.autofeat_accuracy,
             "lift": self.lift,

@@ -109,12 +109,12 @@ scenarios:
     temporal_tolerance: null
     lake:
       - amf-performance_seg02_20211112_151228.csv
-      - amf-performance_seg04_20211113_042705.csv
-      - amf-performance_seg05_20211113_141818.csv
-      - amf-performance_seg06_20211113_155101.csv
-      - amf-performance_seg07_20211113_175525.csv
-      - amf-performance_seg08_20211113_190233.csv
-      - amf-performance_seg09_20211113_201749.csv
+      - amf-performance_seg03_20211114_072356.csv
+      - amf-performance_seg04_20211115_092253.csv
+      - amf-performance_seg05_20211115_145002.csv
+      - amf-performance_seg06_20211116_161428.csv
+      - amf-performance_seg07_20211116_210722.csv
+      - amf-performance_seg08_20211117_055508.csv
     join_keys: [n]
     expected_behaviour: partial
 
@@ -124,7 +124,7 @@ scenarios:
       Flip the target: predict n (workload intensity) from rabbitmq's observed metrics,
       with cross-app lake. Sanity check that AutoFeat refuses cross-app augmentation
       even when the prediction target changes.
-    base_dir: datasets/EUR/6907619
+    base_dir: scenarios/scenarioN_target_n
     base_table: rabbitmq-performance.csv
     target_column: n
     dataset_type: regression

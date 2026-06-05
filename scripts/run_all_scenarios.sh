@@ -48,8 +48,8 @@ run_scenario scenarioB_amf_seg01 \
   --data-dir scenarios/scenarioB_seg01 --dataset-type regression --algorithms XGB
 
 run_scenario scenarioN_target_n \
-  --base-table datasets/EUR/6907619/rabbitmq-performance.csv --target n \
-  --data-dir datasets/EUR/6907619 --dataset-type regression \
+  --base-table scenarios/scenarioN_target_n/rabbitmq-performance.csv --target n \
+  --data-dir scenarios/scenarioN_target_n --dataset-type regression \
   --temporal-key time --temporal-tolerance 60 --algorithms XGB
 
 run_scenario scenarioK_csi \

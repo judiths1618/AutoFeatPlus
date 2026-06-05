@@ -21,6 +21,16 @@ from feature_discovery.experiments.benchmark_scenarios import (
 )
 
 
+def display_path(path: Path | str | None) -> str:
+    if path is None:
+        return ""
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
+
+
 def parse_list(value: Any) -> list[Any]:
     if isinstance(value, list):
         return value
@@ -49,7 +59,7 @@ def normalize_6g_summary(path: Path) -> pd.DataFrame:
         )
         rows.append(
             {
-                "source_file": str(path),
+                "source_file": display_path(path),
                 "dataset_label": row.get("scenario", ""),
                 "data_variant": "raw",
                 "benchmark_family": "6g_benchmark",
@@ -75,6 +85,66 @@ def normalize_6g_summary(path: Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+CURRENT_SCENARIO_SLUGS = {
+    "scenario1": ["strong-base"],
+    "scenario2c": ["missing-signal"],
+    "scenarioA_lat95": ["weak-join-alignment", "privacy-proxy-sensitive"],
+    "scenarioA_lat99": ["weak-join-alignment", "privacy-proxy-sensitive"],
+    "scenarioB_amf_seg01": ["wide-multi-table"],
+    "scenarioN_target_n": ["strong-base", "privacy-proxy-sensitive"],
+    "scenarioK_csi": ["high-dimensional-structured"],
+    "scenarioR_resource": ["missing-signal", "weak-join-alignment"],
+    "scenarioU_unrelated": ["weak-join-alignment"],
+}
+
+
+def normalize_auto_pipeline_summary(path: Path) -> pd.DataFrame:
+    if not path.exists():
+        return pd.DataFrame()
+    frame = pd.read_csv(path)
+    if frame.empty or "scenario" not in frame.columns:
+        return pd.DataFrame()
+
+    rows = []
+    for _, row in frame.iterrows():
+        data_label = str(row.get("scenario", ""))
+        scenarios = CURRENT_SCENARIO_SLUGS.get(
+            data_label,
+            infer_benchmark_scenarios(
+                data_label=data_label,
+                source_file=str(path),
+                split_mode="time",
+                target_column="lat99",
+            ),
+        )
+        rows.append(
+            {
+                "source_file": display_path(path),
+                "dataset_label": data_label,
+                "data_variant": "scenario",
+                "benchmark_family": "auto_pipeline",
+                "method": row.get("approach", ""),
+                "model": row.get("algorithm", ""),
+                "primary_metric": "r2",
+                "primary_value": row.get("accuracy", pd.NA),
+                "rmse": row.get("rmse", pd.NA),
+                "mae": row.get("mae", pd.NA),
+                "n_features": row.get("n_features", pd.NA),
+                "split_mode": "time",
+                "test_groups": "",
+                "time_tolerance_seconds": pd.NA,
+                "joined_feature_count": pd.NA,
+                "all_null_joined_features": pd.NA,
+                "mean_missing_ratio_joined": pd.NA,
+                "n_blocked_features": pd.NA,
+                "privacy_policy": row.get("join_name", ""),
+                "scenario_slugs": "|".join(scenarios),
+                "scenario_titles": scenario_titles(scenarios),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
 def normalize_approach_csv(path: Path) -> pd.DataFrame:
     if not path.exists():
         return pd.DataFrame()
@@ -93,7 +163,7 @@ def normalize_approach_csv(path: Path) -> pd.DataFrame:
         )
         rows.append(
             {
-                "source_file": str(path),
+                "source_file": display_path(path),
                 "dataset_label": data_label,
                 "data_variant": "cleaned" if "cleaned" in str(path).lower() else "raw",
                 "benchmark_family": "autofeatplus_local",
@@ -134,7 +204,7 @@ def normalize_downstream_csv(path: Path, primary_metric: str) -> pd.DataFrame:
         )
         rows.append(
             {
-                "source_file": str(path),
+                "source_file": display_path(path),
                 "dataset_label": data_label,
                 "data_variant": "cleaned" if "cleaned" in str(path).lower() else "raw",
                 "benchmark_family": "downstream",
@@ -162,6 +232,7 @@ def normalize_downstream_csv(path: Path, primary_metric: str) -> pd.DataFrame:
 
 def collect_rows() -> pd.DataFrame:
     files = [
+        normalize_auto_pipeline_summary(Path("results/6g_data/summary.csv")),
         normalize_6g_summary(Path("results/6g_data/benchmark_6g_summary.csv")),
         normalize_approach_csv(Path("results/6g_data/kul_autofeat_plus_random.csv")),
         normalize_approach_csv(Path("results/6g_data/kul_autofeat_plus_user_holdout.csv")),
@@ -242,8 +313,8 @@ def main() -> None:
     args.output_md.parent.mkdir(parents=True, exist_ok=True)
     args.output_md.write_text(report, encoding="utf-8")
 
-    print(f"Saved {len(summary)} rows to {args.output_csv}")
-    print(f"Saved scenario report to {args.output_md}")
+    print(f"Saved {len(summary)} rows to {display_path(args.output_csv)}")
+    print(f"Saved scenario report to {display_path(args.output_md)}")
 
 
 if __name__ == "__main__":

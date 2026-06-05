@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -17,6 +18,16 @@ from feature_discovery.dataset_relation_graph.hybrid_discovery import (
     infer_dataset_relationships,
     recommend_connections,
 )
+
+
+def display_path(path: Path | str | None) -> str | None:
+    if path is None:
+        return None
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 
 def main() -> None:
@@ -41,7 +52,7 @@ def main() -> None:
     parser.add_argument("--autofeatplus-algorithm", default="XGBoost")
     parser.add_argument(
         "--python-bin",
-        default=str(Path.home() / "miniconda3" / "envs" / "autofeat-py3.10" / "bin" / "python"),
+        default=os.getenv("AUTOFEAT_PYTHON", "python"),
     )
     args = parser.parse_args()
 
@@ -92,11 +103,11 @@ def main() -> None:
     ]
     plan_path.write_text("\n".join(plan_lines), encoding="utf-8")
 
-    print(f"Saved candidate relationships to {relationships_path}")
-    print(f"Saved recommended connections to {recommended_path}")
-    print(f"Saved plain connections.csv to {plain_connections_path}")
-    print(f"Saved report to {report_path}")
-    print(f"Saved benchmark plan to {plan_path}")
+    print(f"Saved candidate relationships to {display_path(relationships_path)}")
+    print(f"Saved recommended connections to {display_path(recommended_path)}")
+    print(f"Saved plain connections.csv to {display_path(plain_connections_path)}")
+    print(f"Saved report to {display_path(report_path)}")
+    print(f"Saved benchmark plan to {display_path(plan_path)}")
 
     if not args.run_benchmark:
         return
@@ -108,9 +119,9 @@ def main() -> None:
     benchmark_output = run_dir / "benchmark_results.csv"
     command = [
         args.python_bin,
-        str(ROOT / "downstream ML" / "benchmark_eur_augmented.py"),
+        str(Path("downstream ML") / "benchmark_eur_augmented.py"),
         "--data-dir",
-        str(args.data_dir),
+        display_path(args.data_dir),
         "--base-table",
         plan["base_table"],
         "--join-tables",
@@ -130,16 +141,16 @@ def main() -> None:
         "--feature-source",
         args.feature_source,
         "--autofeatplus-results-csv",
-        str(args.autofeatplus_results_csv),
+        display_path(args.autofeatplus_results_csv),
         "--autofeatplus-algorithm",
         args.autofeatplus_algorithm,
         "--output",
-        str(benchmark_output),
+        display_path(benchmark_output),
     ]
     print("Running benchmark command:")
     print(" ".join(command))
-    subprocess.run(command, check=True)
-    print(f"Saved benchmark results to {benchmark_output}")
+    subprocess.run(command, check=True, cwd=ROOT)
+    print(f"Saved benchmark results to {display_path(benchmark_output)}")
 
 
 if __name__ == "__main__":

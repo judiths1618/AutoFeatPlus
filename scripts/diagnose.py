@@ -17,6 +17,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from feature_discovery.config import rel
 from feature_discovery.dataset_introspection import describe_table, diagnose
 
 
@@ -37,7 +38,7 @@ def main() -> None:
     diag = diagnose(args.base_table, args.target,
                     dataset_type=args.dataset_type, temporal_key=args.temporal_key)
 
-    print(f"Base table : {args.base_table}")
+    print(f"Base table : {rel(args.base_table)}")
     print(f"  rows     : {diag.spec.n_rows}")
     print(f"  columns  : {len(diag.spec.columns)}")
     print(f"  target   : '{args.target}' "

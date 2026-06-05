@@ -1,9 +1,24 @@
 from __future__ import annotations
 
 import argparse
+import warnings
 from pathlib import Path
 
 import pandas as pd
+
+warnings.filterwarnings("ignore", message="Tight layout not applied.*", category=UserWarning)
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def display_path(path: Path | str | None) -> str:
+    if path is None:
+        return ""
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 
 APPROACH_ORDER = ["BASE", "Join_All_BFS", "AutoFeatPlus_Local"]
@@ -193,7 +208,7 @@ def main() -> None:
         bar_plot(frame, "mae", "MAE By Method", args.output_dir / f"mae_{stem_suffix}.png", "MAE")
 
     plot_frontier(frame, args.output_dir / f"performance_vs_features_{stem_suffix}.png")
-    print(f"Saved plots to {args.output_dir}")
+    print(f"Saved plots to {display_path(args.output_dir)}")
 
 
 if __name__ == "__main__":

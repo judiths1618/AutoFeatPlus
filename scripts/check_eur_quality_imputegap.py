@@ -21,6 +21,17 @@ DATASETS = {
 }
 
 DEFAULT_METHODS = ["ffill_bfill", "linear_time", "mean", "imputegap_interpolation", "imputegap_mean"]
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def display_path(path: Path | str | None) -> str | None:
+    if path is None:
+        return None
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 
 @dataclass
@@ -225,7 +236,7 @@ def quality_summary(
     }
     return {
         "dataset": dataset,
-        "file": str(path),
+        "file": display_path(path),
         "row_count": len(dataframe),
         "column_count": len(dataframe.columns),
         "time_start": format_timestamp(parsed_time.min()),
@@ -281,7 +292,7 @@ def prepare_table(args: argparse.Namespace, dataset: str) -> tuple[PreparedTable
         gap_rows.append(
             {
                 "dataset": dataset,
-                "file": str(path),
+                "file": display_path(path),
                 "gap_start": format_timestamp(start),
                 "gap_end": format_timestamp(end),
                 "gap_seconds": float(delta.total_seconds()),
@@ -334,8 +345,8 @@ def recovered_imputegap_frame(frame: pd.DataFrame, imputer: Any) -> pd.DataFrame
 
 
 def impute_with_imputegap(frame: pd.DataFrame, method: str) -> pd.DataFrame:
-    os.environ.setdefault("MPLCONFIGDIR", "/private/tmp/matplotlib")
-    os.environ.setdefault("XDG_CACHE_HOME", "/private/tmp")
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache") / "matplotlib"))
+    os.environ.setdefault("XDG_CACHE_HOME", str(Path(".cache")))
     from imputegap.recovery.imputation import Imputation  # type: ignore
 
     matrix = frame.to_numpy(dtype="float64").T
@@ -409,7 +420,7 @@ def compare_imputers(args: argparse.Namespace, table: PreparedTable) -> list[dic
         metrics = score_imputation(table.regular_numeric, imputed, eval_mask)
         output_path = None
         if args.save_imputed:
-            output_path = str(save_imputed_csv(table, imputed, method, args.output_dir))
+            output_path = display_path(save_imputed_csv(table, imputed, method, args.output_dir))
         rows.append(
             {
                 "dataset": table.dataset,
@@ -460,10 +471,10 @@ def main() -> None:
     pd.DataFrame(comparison_rows).to_csv(comparisons_path, index=False)
     validation_path.write_text(json.dumps(validation_payloads, indent=2), encoding="utf-8")
 
-    print(f"Wrote {quality_path}")
-    print(f"Wrote {gaps_path}")
-    print(f"Wrote {comparisons_path}")
-    print(f"Wrote {validation_path}")
+    print(f"Wrote {display_path(quality_path)}")
+    print(f"Wrote {display_path(gaps_path)}")
+    print(f"Wrote {display_path(comparisons_path)}")
+    print(f"Wrote {display_path(validation_path)}")
 
 
 if __name__ == "__main__":

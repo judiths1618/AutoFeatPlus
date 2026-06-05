@@ -2,9 +2,24 @@ from __future__ import annotations
 
 import argparse
 import os
+import warnings
 from pathlib import Path
 
 import pandas as pd
+
+warnings.filterwarnings("ignore", message="Tight layout not applied.*", category=UserWarning)
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def display_path(path: Path | str | None) -> str:
+    if path is None:
+        return ""
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 
 APPROACH_LABELS = {
@@ -37,7 +52,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input",
         type=Path,
-        default=Path("results/6g_data/EUR/6907619_autofeat_plus_local.csv"),
+        default=Path("results/6g_data/summary.csv"),
         help="Benchmark CSV with approach, algorithm, accuracy/rmse/mae, and policy metadata.",
     )
     parser.add_argument(
@@ -60,7 +75,7 @@ def parse_args() -> argparse.Namespace:
 
 
 def policy_from_row(row: pd.Series) -> str:
-    for column in ["join_name", "test_groups", "privacy_policy"]:
+    for column in ["join_name", "test_groups", "privacy_policy", "scenario", "data_label"]:
         value = row.get(column)
         if isinstance(value, str) and value and value != "nan":
             return value.split(";", 1)[0]
@@ -220,7 +235,7 @@ def plot_feature_frontier(frame: pd.DataFrame, output_path: Path) -> None:
 
 def main() -> None:
     args = parse_args()
-    os.environ.setdefault("MPLCONFIGDIR", str(Path("/private/tmp/matplotlib-codex")))
+    os.environ.setdefault("MPLCONFIGDIR", str(Path(".cache") / "matplotlib"))
     args.output_dir.mkdir(parents=True, exist_ok=True)
 
     frame, algorithm = load_results(args.input, args.algorithm, args.include_join_all)
@@ -251,8 +266,8 @@ def main() -> None:
     )
     plot_feature_frontier(frame, args.output_dir / f"{safe_algorithm}_r2_vs_features.png")
 
-    print(f"Saved normalized data to {normalized_path}")
-    print(f"Saved BASE vs AutoFeat plots to {args.output_dir}")
+    print(f"Saved normalized data to {display_path(normalized_path)}")
+    print(f"Saved BASE vs AutoFeat plots to {display_path(args.output_dir)}")
 
 
 if __name__ == "__main__":

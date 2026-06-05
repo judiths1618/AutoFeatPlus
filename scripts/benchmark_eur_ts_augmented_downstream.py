@@ -5,6 +5,7 @@ import ast
 import hashlib
 import json
 import math
+import os
 import sys
 import time
 import warnings
@@ -18,6 +19,16 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
+
+
+def display_path(path: Path | str | None) -> str | None:
+    if path is None:
+        return None
+    resolved = Path(path).resolve()
+    try:
+        return str(resolved.relative_to(ROOT))
+    except ValueError:
+        return resolved.name
 
 from feature_discovery.experiments.autofeat_plus import select_autofeat_plus_features
 from feature_discovery.experiments.local_benchmark_utils import join_tables, read_table
@@ -420,7 +431,7 @@ def append_results(path: Path, rows: list[dict[str, Any]]) -> None:
         if column not in frame.columns:
             frame[column] = np.nan
     frame = frame[RESULT_COLUMNS]
-    if path.exists():
+    if path.exists() and os.getenv("AUTOFEAT_APPEND_RESULTS", "0") == "1":
         old = pd.read_csv(path)
         frame = pd.concat([old, frame], ignore_index=True)
         frame = frame.drop_duplicates(subset=["run_id"], keep="last")
@@ -436,9 +447,9 @@ def save_metadata(args: argparse.Namespace, rows: list[dict[str, Any]], feature_
         "description": "Train-only classic time-series-style augmentation evaluated by downstream tabular regressors.",
         "args": vars(args)
         | {
-            "data_dir": str(args.data_dir),
-            "output": str(args.output),
-            "metadata_dir": str(args.metadata_dir),
+            "data_dir": display_path(args.data_dir),
+            "output": display_path(args.output),
+            "metadata_dir": display_path(args.metadata_dir),
         },
         "feature_sets": feature_sets,
         "run_ids": [row["run_id"] for row in rows],
@@ -564,8 +575,8 @@ def main() -> None:
 
     append_results(args.output, rows)
     metadata_path = save_metadata(args, rows, variant_features)
-    print(f"Saved downstream augmentation rows to {args.output}")
-    print(f"Saved metadata to {metadata_path}")
+    print(f"Saved downstream augmentation rows to {display_path(args.output)}")
+    print(f"Saved metadata to {display_path(metadata_path)}")
     preview = pd.DataFrame(rows)
     for column in ["r2", "rmse", "mae"]:
         if column not in preview.columns:

@@ -10,6 +10,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from feature_discovery.config import rel
+
 
 TIME_TOLERANCE_GRID = (1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600)
 CONFIG_KEY_NAMES = {
@@ -369,8 +371,8 @@ def build_relationship_report(
     recommended: pd.DataFrame,
 ) -> str:
     lines = ["# Hybrid Relationship Discovery Report", ""]
-    lines.append(f"Data directory: {data_dir}")
-    lines.append(f"Metadata file: {metadata_path if metadata_path else 'None'}")
+    lines.append(f"Data directory: {rel(data_dir)}")
+    lines.append(f"Metadata file: {rel(metadata_path) if metadata_path else 'None'}")
     lines.append("")
     lines.append("## Recommended Connections")
     if recommended.empty:
