@@ -157,9 +157,6 @@ environment if they are not already present:
 pip install streamlit
 pip install "u8darts[torch]"
 ```
-
-The main time-series runner is `scripts/benchmark_eur_darts.py`.
-
 ## Start Neo4j For AutoFeat
 
 AutoFeat feature discovery stores candidate table relationships in Neo4j.
@@ -245,13 +242,11 @@ bash scripts/run_all_scenarios.sh
 After it finishes, refresh the summary/report:
 ```bash
 python scripts/summarize_results.py
-python scripts/build_benchmark_scenario_report.py
 ```
 
 Expected outputs locate in: 
 results/6g_data/summary.csv
 results/6g_data/SUMMARY.md
-results/6g_data/benchmark_scenarios_report.md
 results/6g_data/run_logs/
 The same flow is available as:
 
@@ -364,106 +359,6 @@ itself once. For benchmark reruns, keep the same package versions, data,
 `AUTOFEAT_AG_TIME_LIMIT`, and seed; changing any of those can change absolute
 metrics, so compare approaches only within one run/seed.
 
-### Summarize And Plot AutoFeat Results
-
-```bash
-python scripts/summarize_results.py
-
-python scripts/plot_base_autofeat_curves.py \
-  --input results/6g_data/EUR/6907619_autofeat_plus_local.csv \
-  --output-dir results/6g_data/figures/base_vs_autofeat
-```
-
-Important outputs:
-
-```text
-results/6g_data/summary.csv
-results/6g_data/figures/base_vs_autofeat/base_vs_autofeat_curves_data.csv
-results/6g_data/figures/base_vs_autofeat/XGBoost_r2_curve.png
-```
-
-## Track B — Time-Series Augmentation
-
-This track answers: **does train-only time-series augmentation improve
-forecasting on unchanged real test windows?**
-
-It should be interpreted separately from AutoFeat feature discovery.
-
-### Run A Darts Benchmark
-
-```bash
-python scripts/benchmark_eur_darts.py \
-  --dataset rabbitmq \
-  --task forecasting \
-  --target-column lat99 \
-  --models naive_drift linear_regression random_forest \
-  --augmentation-method none scaling magnitude_mask \
-  --window-size 32 \
-  --stride 8 \
-  --horizon 1 \
-  --seed 42 \
-  --output results/6g_data/darts/evaluation_summary.csv
-```
-
-Supported datasets:
-
-```text
-rabbitmq  amf  golang_web  python_web
-```
-
-Supported augmentation methods:
-
-```text
-none  jitter  scaling  time_mask  magnitude_mask
-```
-
-The runner writes:
-
-```text
-results/6g_data/darts/evaluation_summary.csv
-results/6g_data/darts/predictions/*.npz
-results/6g_data/darts/metadata/*.json
-results/6g_data/darts/profiles/*_profile.csv
-```
-
-To forecast every selected non-time numeric feature:
-
-```bash
-python scripts/benchmark_eur_darts.py \
-  --dataset rabbitmq \
-  --task forecasting \
-  --target-columns all_features \
-  --models naive_drift linear_regression \
-  --augmentation-method none scaling \
-  --window-size 32 \
-  --stride 8 \
-  --horizon 1 \
-  --output results/6g_data/darts/evaluation_summary.csv
-```
-
-## Relationship Discovery And Base-Table Reports
-
-To inspect likely join keys and use cases for a base table:
-
-```bash
-python scripts/run_base_table_pipeline.py \
-  --data-dir datasets/EUR/6907619 \
-  --metadata datasets/EUR/metadata.txt \
-  --base-table amf-performance.csv \
-  --target-column lat99 \
-  --output-dir results/6g_data/base_table_pipeline/6907619/amf-performance
-```
-
-Example outputs:
-
-```text
-relationship_report.md
-benchmark_plan.txt
-candidate_relationships.csv
-recommended_connections.csv
-use_cases.md
-```
-
 ## Dashboard
 
 A single Streamlit app covers four views:
@@ -480,35 +375,12 @@ streamlit run dashboards/augmentation_dashboard.py
 | **Run on your data** | Upload a base table + lake CSVs (+ optional `connections.csv` and `metadata.txt`) and trigger the pipeline |
 | **Graph** | Three pickers: **Source** (`Live Neo4j` or any scenario), **Method** (`All discovered edges` or one of `BASE` / `Join_All_BFS` / `Filter` / `AutoFeat` / `AutoFeatPlus`), **Algorithm** (`XGBoost` / `RandomForest`). Method mode draws **only the tables that method actually used**, sized by feature count, with a side panel listing every selected feature ranked by \|importance\|. Standalone selected source tables are shown with dashed synthetic links so the method overlay never silently hides a selected table. |
 
-Time-series augmentation results (Track B + Track C) are written to
-`results/6g_data/darts/evaluation_summary.csv` and
-`results/6g_data/downstream/ts_augmented_downstream.csv`. They are **not**
-surfaced in the dashboard — inspect them directly with `pandas` or your editor.
-
 If `streamlit` is missing, install it in the active environment:
 
 ```bash
 pip install streamlit
 ```
 
-## Reproducing Saved Figures And Tables
-
-From existing result CSVs:
-
-```bash
-python scripts/summarize_results.py
-
-python scripts/summarize_autofeat_plus_results.py \
-  --output results/6g_data/autofeat_plus_comparison_summary.csv
-
-python scripts/plot_autofeat_plus_results.py \
-  --summary results/6g_data/autofeat_plus_comparison_summary.csv \
-  --output-dir results/6g_data/figures
-
-python scripts/plot_base_autofeat_curves.py
-
-python scripts/build_benchmark_scenario_report.py
-```
 
 ## Current Findings To Expect
 
@@ -583,22 +455,6 @@ In the **Graph** tab, switch the Method picker between `Join_All_BFS` and
 **`AutoFeat` lights up only the base table (same 4 features as BASE)**.
 The +0.433 R² lift is therefore *not* from selecting lake features. Use this
 source-table provenance check whenever a headline delta looks surprising.
-
-<!-- Time-series augmentation:
-
-- RabbitMQ forecasting is the most augmentation-sensitive in the current Darts
-  results.
-- AMF is already strong without augmentation and current classic transforms can
-  slightly hurt.
-- Synthetic realism metrics near discriminative accuracy `0.5` mean generated
-  windows are not trivially separable, but realism alone does not guarantee
-  downstream utility.
-
-Bridge utility:
-
-- The downstream smoke result currently shows that augmentation can help Darts
-  forecasting while still hurting a downstream tabular Ridge task. This is why
-  the dashboard and README keep the method families separate. -->
 
 ## Troubleshooting
 
