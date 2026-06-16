@@ -85,47 +85,38 @@ Each row below points at the code that changed.
 ```text
 src/feature_discovery/
 ├── auto_pipeline.py                     # end-to-end AutoFeat CLI
-├── augmentation/                        # DataOps materialisation runner
 ├── autofeat_pipeline/                   # BFS joins + mRMR feature selection
-├── baselines/                           # JOIN_ALL / ARDA-style baselines
 ├── dataset_relation_graph/              # metadata/transformer relationship discovery
 ├── experiments/                         # baselines, AutoFeatPlus, evaluation helpers
-├── graph_processing/                    # graph utilities used by discovery/evaluation
-├── helpers/                             # shared config, path, and utility helpers
 └── pipelines/base_table_pipeline.py     # base-table relationship planning helpers
 
-scripts/                                 # selected entry points
+scripts/                                 # selected entry points — `ls scripts/` for the full ~20
 ├── prepare_augmentation_scenarios.py    # builds the 9 benchmark scenarios into scenarios/
 ├── split_eur_by_time_gaps.py            # segments EUR telemetry CSVs at large time gaps
 ├── run_all_scenarios.sh                 # one-shot 9-scenario benchmark runner
 ├── smoke_test.py                        # `make smoke` — accuracy-floor regression check
-├── build_benchmark_scenario_report.py   # scenario evidence report generator
 ├── benchmark_eur_darts.py               # Track B — Darts forecasting × augmentation
 ├── benchmark_eur_ts_augmented_downstream.py
 │                                         # Track C — bridge / downstream utility
 ├── benchmark_eur_autofeat_plus_local.py # standalone AutoFeatPlus benchmark (pre-pipeline)
 ├── benchmark_kul_local.py               # KUL-only local benchmark (no Neo4j)
-├── infer_dataset_relationships.py       # offline relationship discovery helper
 ├── summarize_results.py                 # AutoFeat scenario summary
 ├── summarize_autofeat_plus_results.py   # AutoFeatPlus summary
 ├── plot_base_autofeat_curves.py         # BASE vs AutoFeat plots
 ├── plot_autofeat_plus_results.py        # AutoFeatPlus comparison plots
 ├── run_base_table_pipeline.py           # relationship/use-case reports
-└── diagnose.py                          # quick diagnostics for data/result issues
+└── …                                    # diagnose, infer_dataset_relationships, etc.
 
 dashboards/
 └── augmentation_dashboard.py            # AutoFeat dashboard (Results, Compare,
-                                          # Run-on-your-data, graph view)
+                                          # Run-on-your-data, inline graph view)
 
 conftest.py                              # puts src/ on sys.path for pytest
 .github/workflows/ci.yml                 # discovers + runs every test_*.py
-docker-compose.yml                       # local Neo4j service for graph discovery
-Makefile                                 # setup, smoke, demo, dashboard shortcuts
 
 datasets/
 ├── EUR/6907619/                         # raw 6G EUR telemetry tables
-├── KUL/                                 # raw MaMIMO CSI data layouts
-└── aug_dash_*/                          # dashboard-staged uploads, if used
+└── KUL/                                 # raw MaMIMO CSI data layouts
 
 scenarios/
 ├── scenarios.yaml                       # benchmark manifest
@@ -142,10 +133,6 @@ results/6g_data/
 ├── SUMMARY.md  +  summary.csv           # cross-scenario rollup (`summarize_results.py`)
 ├── benchmark_scenarios_report.md        # scenario-centric evidence report
 ├── benchmark_scenarios_summary.csv      # normalized input for that report
-└── figures/                             # regenerated report plots
-
-AutogluonModels/                         # generated AutoGluon model artifacts
-neo4j-data/                              # local Docker Neo4j volume/state
 ```
 
 ## Environment Setup
@@ -205,7 +192,6 @@ datasets/
 │       ├── amf-performance.csv
 │       ├── golang-web-server-performance.csv
 │       ├── python-web-server-performance.csv
-│       ├── connections.csv
 │       └── split_output/                # optional time-gap segments
 └── KUL/                                 # raw MaMIMO CSI layouts
 
@@ -228,8 +214,6 @@ results/6g_data/
 ├── augmented_datasets/                  # DataOps-ready materialised joins
 ├── run_logs/                            # per-scenario stdout/stderr
 ├── summary.csv + SUMMARY.md             # cross-scenario rollup
-├── benchmark_scenarios_report.md        # scenario evidence report
-├── benchmark_scenarios_summary.csv      # report input table
 ├── darts/                               # Track B forecasting outputs
 ├── downstream/                          # Track C downstream utility outputs
 └── figures/                             # regenerated plots
@@ -249,36 +233,26 @@ step. The dashboard's run tab may also stage uploaded inputs under
 ## Quick Reproduction Path
 
 The fastest end-to-end AutoFeat reproduction is:
-
+activate the environment and then run all benchmark scenarios reproducibly:
 ```bash
 conda activate autofeat-6g
-docker-compose up -d neo4j
+docker start feature-discovery-neo4j
 
-python scripts/prepare_augmentation_scenarios.py --scenario 2c k
+AUTOFEAT_SEED=42 PYTHONHASHSEED=42 PYTHONPATH=src USE_TF=0 TRANSFORMERS_NO_TF=1 \
+bash scripts/run_all_scenarios.sh
+```
 
-python -m feature_discovery.auto_pipeline \
-  --base-table scenarios/scenario2c/rabbitmq-reduced.csv \
-  --target lat99 \
-  --data-dir scenarios/scenario2c \
-  --dataset-type regression \
-  --temporal-key time \
-  --temporal-tolerance 0 \
-  --algorithms XGB \
-  --label scenario2c
-
-python -m feature_discovery.auto_pipeline \
-  --base-table scenarios/scenarioK_csi/samples_base.csv \
-  --target target_x \
-  --data-dir scenarios/scenarioK_csi \
-  --dataset-type binary \
-  --no-transformer-discovery \
-  --algorithms XGB \
-  --label scenarioK_csi
-
+After it finishes, refresh the summary/report:
+```bash
 python scripts/summarize_results.py
 python scripts/build_benchmark_scenario_report.py
 ```
 
+Expected outputs locate in: 
+results/6g_data/summary.csv
+results/6g_data/SUMMARY.md
+results/6g_data/benchmark_scenarios_report.md
+results/6g_data/run_logs/
 The same flow is available as:
 
 ```bash
@@ -290,9 +264,7 @@ Expected outputs:
 ```text
 results/6g_data/auto_pipeline_scenario2c.csv
 results/6g_data/auto_pipeline_scenarioK_csi.csv
-results/6g_data/SUMMARY.md
 results/6g_data/summary.csv
-results/6g_data/benchmark_scenarios_report.md
 ```
 
 ### Make Targets
@@ -405,7 +377,6 @@ python scripts/plot_base_autofeat_curves.py \
 Important outputs:
 
 ```text
-results/6g_data/SUMMARY.md
 results/6g_data/summary.csv
 results/6g_data/figures/base_vs_autofeat/base_vs_autofeat_curves_data.csv
 results/6g_data/figures/base_vs_autofeat/XGBoost_r2_curve.png
@@ -469,35 +440,6 @@ python scripts/benchmark_eur_darts.py \
   --horizon 1 \
   --output results/6g_data/darts/evaluation_summary.csv
 ```
-
-## Track C — Bridge / Downstream Utility
-
-This exploratory track asks: **if time-series-style augmentation is applied only
-to training rows, does a downstream tabular application improve?**
-
-These rows are bridge evidence, not the primary evaluation for AutoFeat or for
-time-series augmentation.
-
-```bash
-python scripts/benchmark_eur_ts_augmented_downstream.py \
-  --dataset rabbitmq \
-  --variants BASE AutoFeatPlus_Local \
-  --models ridge rf \
-  --augmentation-method none scaling magnitude_mask \
-  --target-column lat99 \
-  --split-mode time \
-  --output results/6g_data/downstream/ts_augmented_downstream.csv
-```
-
-Outputs:
-
-```text
-results/6g_data/downstream/ts_augmented_downstream.csv
-results/6g_data/downstream/metadata/*.json
-```
-
-The implementation keeps the real test period unchanged and augments only the
-training slice.
 
 ## Relationship Discovery And Base-Table Reports
 
@@ -579,17 +521,6 @@ XGBoost (representative snapshot from the latest full run — re-run with
 `bash scripts/run_all_scenarios.sh`, then `python scripts/summarize_results.py`
 and `python scripts/build_benchmark_scenario_report.py`):
 
-| Class | Scenario | BASE | AutoFeat | AutoFeatPlus | Δ AF | Δ AF+ |
-|---|---|---:|---:|---:|---:|---:|
-| 🟢 P | `scenario2c` (feature recovery, proxy-free lake) | 0.5395 | 0.9385 | **0.9518** | +0.399 | **+0.412** |
-| 🟢 P | `scenarioR_resource` (cross-app contention, no target overlap) | 0.5395 | **0.9724** | 0.5373 | **+0.433** | −0.002 |
-| 🟢 P | `scenarioK_csi` (wide-lake compression, identity-free) | 0.0000 | **1.0000** | 0.9948 | **+1.000** | **+0.995** |
-| 🔴 N | `scenario1` (per-`n` aggregated, structurally degenerate) | 0.9662 | 0.9662 | 0.9454 | 0.000 | −0.021 |
-| 🔴 N | `scenarioN_target_n` (inverse target) | 0.9786 | 0.9784 | 0.9717 | −0.000 | −0.007 |
-| 🔴 N | `scenarioU_unrelated` (heterogeneous lake — KUL → rabbitmq) | 0.9508 | 0.9765 | 0.9508 | +0.026† | 0.000 |
-| 🟡 A | `scenarioA_lat95` (cross-app temporal, lake `lat*` stripped) | 0.9551 | 0.9796 | 0.9048 | +0.025 | −0.050 |
-| 🟡 A | `scenarioA_lat99` (cross-app temporal, lake `lat*` stripped) | 0.9508 | 0.9765 | 0.8845 | +0.026 | −0.066 |
-| 🟡 A | `scenarioB_amf_seg01` (within-app segment pooling) | 0.9412 | 0.9331 | 0.7742 | −0.008 | −0.167 |
 
 † scenarioU's +0.026 (AF) and 0.000 (AF+) is **intra-base feature selection**,
 not lake augmentation — `Join_All_BFS` is identical to BASE.

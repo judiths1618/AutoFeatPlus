@@ -105,7 +105,7 @@ scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/python-web-server-perf
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/python-web-server-performance.csv.ram_usage,python-web-server-performance.csv,75445.52353855743
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/python-web-server-performance.csv.c,python-web-server-performance.csv,46802.99615646452
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/python-web-server-performance.csv.cpu_usage,python-web-server-performance.csv,35361.00401353054
-scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/amf-performance.csv.cpu_usage,amf-performance.csv,178.8351076453924
+scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/amf-performance.csv.cpu_usage,amf-performance.csv,178.835103456676
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/golang-web-server-performance.csv.c,golang-web-server-performance.csv,0.0
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/amf-performance.csv.n,amf-performance.csv,-46187.50731397383
 scenarioA_lat95,AutoFeatPlus,RandomForest,scenarioA_lat95/amf-performance.csv.ram_limit,amf-performance.csv,-88568.24644248039
