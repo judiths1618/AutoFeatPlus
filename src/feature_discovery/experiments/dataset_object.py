@@ -14,7 +14,8 @@ _VALID_DATASET_TYPES = {CLASSIFICATION, MULTICLASS, REGRESSION}
 class Dataset:
     def __init__(self, base_table_path: Path, base_table_name: str, base_table_label: str, target_column: str,
                  dataset_type: str, base_table_features: Optional[List] = None,
-                 temporal_key: Optional[str] = None, temporal_tolerance: int = 60):
+                 temporal_key: Optional[str] = None, temporal_tolerance: int = 60,
+                 temporal_direction: str = "nearest"):
         self.base_table_path = base_table_path
         self.target_column = target_column
         self.base_table_name = base_table_name
@@ -25,6 +26,11 @@ class Dataset:
         # Temporal join settings (None = use exact join)
         self.temporal_key: Optional[str] = temporal_key
         self.temporal_tolerance: int = temporal_tolerance
+        if temporal_direction not in ("nearest", "backward", "forward"):
+            raise ValueError(
+                f"temporal_direction must be nearest|backward|forward, got {temporal_direction!r}"
+            )
+        self.temporal_direction: str = temporal_direction
 
         if dataset_type == REGRESSION:
             self.dataset_type = REGRESSION
@@ -45,4 +51,3 @@ class Dataset:
     def set_base_table_df(self):
         self.base_table_df = pd.read_csv(self.base_table_id, header=0, engine="python", encoding="utf8", quotechar='"',
                                          escapechar='\\')
-

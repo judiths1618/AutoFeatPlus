@@ -23,6 +23,12 @@ from feature_discovery.helpers.optional_polars import POLARS_AVAILABLE, pl
 logging.getLogger().setLevel(logging.WARNING)
 
 
+def _pop_sorted(values: Set[str]) -> str:
+    value = sorted(values)[0]
+    values.remove(value)
+    return value
+
+
 class AutoFeat:
     def __init__(
         self,
@@ -41,6 +47,7 @@ class AutoFeat:
         no_redundancy: bool = False,
         temporal_key: Optional[str] = None,
         temporal_tolerance: int = 60,
+        temporal_direction: str = "nearest",
     ):
         """
 
@@ -70,6 +77,9 @@ class AutoFeat:
         self.join_keys: Dict[str, list] = {}
         self.temporal_key: Optional[str] = temporal_key
         self.temporal_tolerance: int = temporal_tolerance
+        if temporal_direction not in ("nearest", "backward", "forward"):
+            raise ValueError(f"temporal_direction must be nearest|backward|forward, got {temporal_direction!r}")
+        self.temporal_direction: str = temporal_direction
         self.rel_red = RelevanceRedundancy(target_column, jmi=jmi, pearson=pearson)
         self.temp_dir = tempfile.TemporaryDirectory()
         if use_polars and not POLARS_AVAILABLE:
@@ -140,7 +150,7 @@ class AutoFeat:
 
         while len(queue) > 0:
             # Get the current/base node
-            base_node_id = queue.pop()
+            base_node_id = _pop_sorted(queue)
             self.discovered.add(base_node_id)
             logging.debug(f"New iteration with base node: {base_node_id}")
 
@@ -174,7 +184,7 @@ class AutoFeat:
 
                 current_queue = set()
                 while len(previous_queue) > 0:
-                    previous_join_name = previous_queue.pop()
+                    previous_join_name = _pop_sorted(previous_queue)
 
                     previous_join = None
                     if previous_join_name == self.base_table_id:
@@ -266,7 +276,8 @@ class AutoFeat:
         X = df.drop(columns=[self.target_column])
         y = df[self.target_column]
 
-        features = list(set(X.columns).intersection(set(new_features)))
+        requested = set(new_features)
+        features = [col for col in X.columns if col in requested]
         top_feat = len(features) if len(features) < self.top_k else self.top_k
 
         relevant_features = new_features
@@ -363,6 +374,7 @@ class AutoFeat:
                 tolerance_s=self.temporal_tolerance,
                 csv=False,
                 save_to_disk=self.save_joins_to_disk,
+                direction=self.temporal_direction,
             )
         else:
             # Normalize left_df to polars when use_polars is enabled. left_df

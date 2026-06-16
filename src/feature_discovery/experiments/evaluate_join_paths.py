@@ -57,7 +57,10 @@ def evaluate_paths(
         offline inspection; otherwise the evaluation happens in-memory only.
     """
     logging.debug(f"Evaluate top-{top_k_paths} paths ... ")
-    sorted_paths = sorted(bfs_result.ranking.items(), key=lambda r: (r[1], -get_path_length(r[0])), reverse=True)
+    sorted_paths = sorted(
+        bfs_result.ranking.items(),
+        key=lambda r: (-r[1], get_path_length(r[0]), r[0]),
+    )
     top_k_path_list = sorted_paths if len(sorted_paths) < top_k_paths else sorted_paths[:top_k_paths]
     base_features = bfs_result.partial_join_selected_features[bfs_result.base_table_id]
 
@@ -71,48 +74,18 @@ def evaluate_paths(
             continue
 
         features = list(bfs_result.partial_join_selected_features[join_name])
-        features.append(bfs_result.target_column)
         features.extend(base_features)
-        features = list(dict.fromkeys(features))
-        logging.debug(f"Feature before join_key removal:\n{features}")
-
-        features_tables = [f"{feat.split('.csv')[0]}.csv" for feat in features]
-        features_tables.sort()
-        features_tables = set(features_tables)
-
-        path_tables = {}
-        for p in join_name.split("--"):
-            if "|" not in p:
-                continue  # first segment is just the base table path, no join fields
-            try:
-                from_table, from_col, to_col, to_table = parse_join_step(p)
-                path_tables[to_table] = (from_table, from_col, to_col, to_table)
-            except ValueError:
-                continue
-
-        path_list = []
-        for table in features_tables:
-            if table in path_list:
-                continue
-            path_aux = create_join_tree(table, path_tables)
-            if not (type(path_aux) is list) and (path_aux not in path_tables.keys()):
-                continue
-            path_list.append(path_aux)
-
-        dataframe = join_from_path(
-            path_list,
-            bfs_result.target_column,
-            bfs_result.base_table_id,
+        augmented_dataframe, path_list = materialize_augmented_dataframe(
+            join_name=join_name,
+            selected_features=features,
+            target_column=bfs_result.target_column,
+            base_node=bfs_result.base_table_id,
+            fallback_features=base_features,
             temporal_key=bfs_result.temporal_key,
             temporal_tolerance=bfs_result.temporal_tolerance,
+            temporal_direction=bfs_result.temporal_direction,
+            return_path_list=True,
         )
-        features = list(set(features).intersection(set(dataframe.columns)))
-
-        if len(features) < 2:
-            features = bfs_result.partial_join_selected_features[bfs_result.base_table_id]
-            features.append(bfs_result.target_column)
-
-        augmented_dataframe = dataframe[features]
         if store_augmented_data:
             augmented_path = _get_augmented_dataset_path(
                 augmented_dir,
@@ -191,7 +164,7 @@ def evaluate_paths_from_file(filename: str, algorithm: str, top_k_paths: int = 1
         logging.debug(f"Feature before join_key removal:\n{features}")
 
         dataframe = join_from_path(path_list, dataset.target_column, dataset.base_table_id)
-        features = list(set(features).intersection(set(dataframe.columns)))
+        features = [f for f in features if f in dataframe.columns]
         target = f"{dataset.base_table_label}/{dataset.base_table_name}.{dataset.target_column}"
         features.append(target)
 
@@ -222,6 +195,7 @@ def join_from_path(
     base_node,
     temporal_key: Optional[str] = None,
     temporal_tolerance: int = 60,
+    temporal_direction: str = "nearest",
 ):
     """Reconstruct the full joined dataframe from a join-path list.
 
@@ -229,6 +203,9 @@ def join_from_path(
     *temporal_key*, matching the strategy used during feature discovery.
     Falls back to an exact left-join for all other columns.
     """
+    if temporal_direction not in ("nearest", "backward", "forward"):
+        raise ValueError(f"temporal_direction must be nearest|backward|forward, got {temporal_direction!r}")
+
     join_path = ''
     step = 3
     joined_df = None
@@ -253,18 +230,39 @@ def join_from_path(
             else:
                 left_table = joined_df
 
-            right_table, _ = get_df_with_prefix(p[next_idx])
-            to_column = f"{p[next_idx]}.{p[current_idx + 2]}"
-            right_table = right_table.groupby(to_column).sample(n=1, random_state=SEED)
-
             left_on = f"{p[current_idx]}.{p[current_idx + 1]}"
             right_on = f"{p[next_idx]}.{p[current_idx + 2]}"
             bare_from_col = p[current_idx + 1]
+            right_table, _ = get_df_with_prefix(p[next_idx])
 
             if temporal_key and bare_from_col == temporal_key:
                 # Nearest-timestamp join — mirrors the discovery phase
-                left_sorted = left_table.sort_values(left_on).reset_index(drop=True)
-                right_sorted = right_table.sort_values(right_on).reset_index(drop=True)
+                order_column = "__autofeat_left_order__"
+                while order_column in left_table.columns or order_column in right_table.columns:
+                    order_column = f"_{order_column}"
+                left_with_order = left_table.copy()
+                left_with_order[order_column] = range(len(left_with_order))
+                left_clean = left_with_order.dropna(subset=[left_on])
+                left_null = left_with_order[left_with_order[left_on].isna()]
+                right_clean = right_table.dropna(subset=[right_on])
+                if left_clean.empty or right_clean.empty:
+                    joined_df = left_with_order.sort_values(order_column).drop(columns=[order_column])
+                    join_path += aux
+                    continue
+
+                left_dtype = left_clean[left_on].dtype
+                right_dtype = right_clean[right_on].dtype
+                if left_dtype != right_dtype and (
+                    pd.api.types.is_numeric_dtype(left_dtype)
+                    and pd.api.types.is_numeric_dtype(right_dtype)
+                ):
+                    left_clean = left_clean.copy()
+                    right_clean = right_clean.copy()
+                    left_clean[left_on] = pd.to_numeric(left_clean[left_on], errors="coerce").astype("float64")
+                    right_clean[right_on] = pd.to_numeric(right_clean[right_on], errors="coerce").astype("float64")
+
+                left_sorted = left_clean.sort_values(left_on).reset_index(drop=True)
+                right_sorted = right_clean.sort_values(right_on).reset_index(drop=True)
                 # Resolve tolerance for merge_asof, mirroring the discovery phase.
                 # temporal_tolerance may arrive as an int or a string like "60s";
                 # tolerance=0 means exact match, a negative amount means no limit.
@@ -290,9 +288,14 @@ def join_from_path(
                     left_on=left_on,
                     right_on=right_on,
                     tolerance=tolerance,
-                    direction="nearest",
+                    direction=temporal_direction,
                 )
+                if not left_null.empty:
+                    joined_df = pd.concat([joined_df, left_null], ignore_index=True, sort=False)
+                joined_df = joined_df.sort_values(order_column).drop(columns=[order_column]).reset_index(drop=True)
             else:
+                to_column = f"{p[next_idx]}.{p[current_idx + 2]}"
+                right_table = right_table.groupby(to_column).sample(n=1, random_state=SEED)
                 joined_df = pd.merge(
                     left_table,
                     right_table,
@@ -304,6 +307,69 @@ def join_from_path(
             join_path += aux
 
     return joined_df
+
+
+def materialize_augmented_dataframe(
+    join_name: str,
+    selected_features: List[str],
+    target_column: str,
+    base_node,
+    fallback_features: Optional[List[str]] = None,
+    temporal_key: Optional[str] = None,
+    temporal_tolerance: int = 60,
+    temporal_direction: str = "nearest",
+    return_path_list: bool = False,
+):
+    """Materialize the selected augmented dataframe for a discovered join path."""
+    features = list(selected_features)
+    if target_column not in features:
+        features.append(target_column)
+    features = list(dict.fromkeys(features))
+    logging.debug("Feature before join_key removal:\n%s", features)
+
+    features_tables = list(dict.fromkeys(sorted(f"{feat.split('.csv')[0]}.csv" for feat in features)))
+
+    path_tables = {}
+    for p in join_name.split("--"):
+        if "|" not in p:
+            continue
+        try:
+            from_table, from_col, to_col, to_table = parse_join_step(p)
+            path_tables[to_table] = (from_table, from_col, to_col, to_table)
+        except ValueError:
+            continue
+
+    path_list = []
+    for table in features_tables:
+        if table in path_list:
+            continue
+        path_aux = create_join_tree(table, path_tables)
+        if not (type(path_aux) is list) and (path_aux not in path_tables.keys()):
+            continue
+        path_list.append(path_aux)
+
+    if path_list:
+        dataframe = join_from_path(
+            path_list,
+            target_column,
+            base_node,
+            temporal_key=temporal_key,
+            temporal_tolerance=temporal_tolerance,
+            temporal_direction=temporal_direction,
+        )
+    else:
+        dataframe, _ = get_df_with_prefix(base_node, target_column)
+    features = list(dict.fromkeys([f for f in features if f in dataframe.columns]))
+
+    if len(features) < 2 and fallback_features:
+        features = [f for f in fallback_features if f in dataframe.columns]
+        if target_column in dataframe.columns and target_column not in features:
+            features.append(target_column)
+
+    augmented = dataframe[features]
+    if return_path_list:
+        return augmented, path_list
+    return augmented
 
 
 def create_join_tree(table, path_tables):

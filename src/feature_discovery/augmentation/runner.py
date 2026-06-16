@@ -69,6 +69,7 @@ class AutoFeatRunner:
             dataset_type=dataset_type,
             temporal_key=temporal_key,
             temporal_tolerance=cfg.temporal_tolerance,
+            temporal_direction=cfg.temporal_direction,
         )
 
         # Ingest into Neo4j (+ optional transformer discovery).
@@ -218,7 +219,7 @@ class AutoFeatRunner:
         augmented = base_df.copy()
         if best_features:
             try:
-                augmented = self._materialise_augmented(base_df, best_features)
+                augmented = self._materialise_augmented(best_join_path, best_features, cfg.target)
             except Exception as exc:
                 log.warning("Could not materialise augmented df: %s", exc)
 
@@ -244,52 +245,28 @@ class AutoFeatRunner:
             diagnose=diagnose_report,
         )
 
-    def _materialise_augmented(self, base_df: pd.DataFrame,
-                               selected: List[str]) -> pd.DataFrame:
-        """Best-effort reconstruction of the augmented DataFrame.
+    def _materialise_augmented(self, join_name: str, selected: List[str],
+                               target: str) -> pd.DataFrame:
+        """Reconstruct the augmented DataFrame using the evaluated join path.
 
-        `selected` are AutoFeat's chosen features in the form
-        ``<workdir_name>/<table>.csv.<col>``. We group by table, left-join
-        each lake table to the base on `temporal_key` (if set) or on the
-        first candidate join key, and keep only the selected columns.
-
-        This is the best-effort path for ETL handoff; for full fidelity the
-        pipeline already writes the joined parquet inside the autofeat temp
-        directory (the `store_augmented_data=True` path), but we want
-        something that survives `keep_workdir=False`.
+        This mirrors ``evaluate_paths`` so DataOps exports match the dataframe
+        used for scoring instead of doing a separate best-effort re-join.
         """
-        if self.workdir is None or not selected:
-            return base_df
+        if self.workdir is None or not selected or not join_name:
+            return pd.read_csv(self.workdir / self._base_name()) if self.workdir else pd.DataFrame()
 
-        # Group columns by source table.
-        by_table: Dict[str, List[str]] = {}
-        for f in selected:
-            if "/" in f and ".csv." in f:
-                table_csv, col = f.split(".csv.", 1)
-                table = Path(table_csv).name + ".csv"
-                by_table.setdefault(table, []).append(col)
+        from feature_discovery.experiments.evaluate_join_paths import materialize_augmented_dataframe
 
-        merged = base_df.copy()
-        for table, cols in by_table.items():
-            path = self.workdir / table
-            if not path.exists() or table == self._base_name():
-                continue
-            lake = pd.read_csv(path)
-            key = self.config.temporal_key
-            if key is None:
-                # Use the first column shared with base as a join key.
-                shared = [c for c in lake.columns if c in merged.columns]
-                if not shared:
-                    continue
-                key = shared[0]
-            if key in lake.columns and key in merged.columns:
-                cols_keep = [c for c in cols if c in lake.columns] + [key]
-                try:
-                    merged = merged.merge(lake[cols_keep], on=key, how="left",
-                                          suffixes=("", f"_{table.replace('.csv','')}"))
-                except Exception as exc:
-                    log.warning("Re-join of %s failed: %s", table, exc)
-        return merged
+        base_node = str(Path(self.workdir.name) / self._base_name())
+        return materialize_augmented_dataframe(
+            join_name=join_name,
+            selected_features=selected,
+            target_column=target,
+            base_node=base_node,
+            temporal_key=self.config.temporal_key,
+            temporal_tolerance=self.config.temporal_tolerance,
+            temporal_direction=self.config.temporal_direction,
+        )
 
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────

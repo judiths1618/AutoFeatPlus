@@ -243,7 +243,8 @@ def select_arda_features_budget_join(
 
         # Join every table according to the budget
         while feature_count <= budget_size and len(nodes) > 0:
-            node_id = nodes.pop()
+            node_id = sorted(nodes)[0]
+            nodes.remove(node_id)
             logging.debug(f"Node id: {node_id}\n\tRemaining nodes: {len(nodes)}")
 
             # Get the keys between the base node and connected node
@@ -316,7 +317,8 @@ def select_arda_features_budget_join(
 
         # Compute the columns of the batch and create the batch dataset
         columns = set(left_table.columns) - set(all_columns) - set(base_table_columns)
-        columns = list(set(columns) - set(join_keys))
+        blocked = set(join_keys)
+        columns = [column for column in columns if column not in blocked]
 
         logging.debug(f"{len(columns)} columns to select")
 

@@ -143,10 +143,12 @@ def _value_jaccard(series_a: pd.Series, series_b: pd.Series, sample: int = 10_00
     b = series_b.dropna()
     if a.empty or b.empty:
         return 0.0
+    from feature_discovery.config import SEED
+
     if len(a) > sample:
-        a = a.sample(sample, random_state=42)
+        a = a.sample(sample, random_state=SEED)
     if len(b) > sample:
-        b = b.sample(sample, random_state=42)
+        b = b.sample(sample, random_state=SEED)
     set_a = set(a.unique().tolist())
     set_b = set(b.unique().tolist())
     if not set_a or not set_b:

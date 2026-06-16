@@ -1,0 +1,17 @@
+fk_table,fk_column,pk_table,pk_column
+samples_base.csv,sample_key,antenna_00_features.csv,sample_key
+samples_base.csv,sample_key,antenna_04_features.csv,sample_key
+samples_base.csv,sample_key,antenna_08_features.csv,sample_key
+samples_base.csv,sample_key,antenna_12_features.csv,sample_key
+samples_base.csv,sample_key,antenna_16_features.csv,sample_key
+samples_base.csv,sample_key,antenna_20_features.csv,sample_key
+samples_base.csv,sample_key,antenna_24_features.csv,sample_key
+samples_base.csv,sample_key,antenna_28_features.csv,sample_key
+samples_base.csv,sample_key,antenna_32_features.csv,sample_key
+samples_base.csv,sample_key,antenna_36_features.csv,sample_key
+samples_base.csv,sample_key,antenna_40_features.csv,sample_key
+samples_base.csv,sample_key,antenna_44_features.csv,sample_key
+samples_base.csv,sample_key,antenna_48_features.csv,sample_key
+samples_base.csv,sample_key,antenna_52_features.csv,sample_key
+samples_base.csv,sample_key,antenna_56_features.csv,sample_key
+samples_base.csv,sample_key,antenna_60_features.csv,sample_key

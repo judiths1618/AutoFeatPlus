@@ -49,6 +49,7 @@ def autofeat(
         no_relevance=no_relevance,
         temporal_key=dataset.temporal_key,
         temporal_tolerance=dataset.temporal_tolerance,
+        temporal_direction=dataset.temporal_direction,
     )
     bfs_traversal.streaming_feature_selection(queue={str(dataset.base_table_id)})
     end = time.time()
@@ -111,6 +112,7 @@ def autofeat_plus(
         task=dataset.dataset_type,
         temporal_key=dataset.temporal_key,
         temporal_tolerance=dataset.temporal_tolerance,
+        temporal_direction=dataset.temporal_direction,
     )
     bfs_traversal.streaming_feature_selection(queue={str(dataset.base_table_id)})
     end = time.time()

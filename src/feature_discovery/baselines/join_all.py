@@ -14,6 +14,12 @@ from feature_discovery.graph_processing.neo4j_transactions import get_adjacent_n
 from feature_discovery.helpers.read_data import get_df_with_prefix
 
 
+def _pop_sorted(values: Set[str]) -> str:
+    value = sorted(values)[0]
+    values.remove(value)
+    return value
+
+
 class JoinAll:
     def __init__(
             self,
@@ -121,7 +127,7 @@ class JoinAll:
                 continue
 
             join_columns.extend(self.join_keys[self.partial_join_name])
-            self.join_keys[join_name] = list(set(join_columns))
+            self.join_keys[join_name] = list(dict.fromkeys(join_columns))
             self.join_name_mapping[join_name] = join_filename
             self.partial_join_name = join_name
             break
@@ -160,7 +166,7 @@ class JoinAll:
         all_neighbours = set()
         while len(queue) > 0:
             # Get the current/base node
-            base_node_id = queue.pop()
+            base_node_id = _pop_sorted(queue)
             self.discovered.add(base_node_id)
             logging.debug(f"New iteration with base node: {base_node_id}")
 
@@ -229,7 +235,7 @@ class JoinAll:
                         continue
 
                     join_columns.extend(self.join_keys[self.partial_join_name])
-                    self.join_keys[join_name] = list(set(join_columns))
+                    self.join_keys[join_name] = list(dict.fromkeys(join_columns))
                     self.join_name_mapping[join_name] = join_filename
                     self.partial_join_name = join_name
                     break
@@ -260,7 +266,7 @@ class JoinAll:
         # node_perm_queue_with_paths = queue_with_paths.copy()
         while len(queue_with_nodes) > 0:
             # Get the current/base node
-            base_node_id = queue_with_nodes.pop()
+            base_node_id = _pop_sorted(queue_with_nodes)
             self.discovered.add(base_node_id)
             logging.debug(f"New iteration with base node: {base_node_id}")
 
@@ -279,7 +285,7 @@ class JoinAll:
 
                 neigh_perm_queue_with_paths = queue_with_paths.copy()
                 while len(neigh_perm_queue_with_paths) > 0:
-                    previous_join_name = neigh_perm_queue_with_paths.pop()
+                    previous_join_name = _pop_sorted(neigh_perm_queue_with_paths)
 
                     next_join_name = self.join_neighbours(all_neighbours, base_node_id, perm_neighbours,
                                                           previous_join_name)

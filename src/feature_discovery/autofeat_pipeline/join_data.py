@@ -180,13 +180,34 @@ def temporal_join_and_save(
                 # Not parseable as datetime; let dtype-mismatch check below handle.
                 pass
 
-    if left[left_column_name].dtype != right[right_column_name].dtype:
+    left_dtype = left[left_column_name].dtype
+    right_dtype = right[right_column_name].dtype
+    if left_dtype != right_dtype and (
+        pd.api.types.is_numeric_dtype(left_dtype)
+        and pd.api.types.is_numeric_dtype(right_dtype)
+    ):
+        left[left_column_name] = pd.to_numeric(left[left_column_name], errors="coerce").astype("float64")
+        right[right_column_name] = pd.to_numeric(right[right_column_name], errors="coerce").astype("float64")
+    elif left_dtype != right_dtype:
         return None
 
+    order_column = "__autofeat_left_order__"
+    while order_column in left.columns or order_column in right.columns:
+        order_column = f"_{order_column}"
+    left[order_column] = range(len(left))
+
     left_clean = left.dropna(subset=[left_column_name])
+    left_null = left[left[left_column_name].isna()]
     right_clean = right.dropna(subset=[right_column_name])
     if left_clean.empty or right_clean.empty:
-        return None
+        partial_join = left.sort_values(order_column).drop(columns=[order_column])
+        if save_to_disk:
+            join_path.parent.mkdir(parents=True, exist_ok=True)
+            if csv:
+                partial_join.to_csv(join_path, index=False)
+            else:
+                partial_join.to_parquet(join_path, index=False)
+        return partial_join
 
     left_sorted = left_clean.sort_values(left_column_name).reset_index(drop=True)
     right_sorted = right_clean.sort_values(right_column_name).reset_index(drop=True)
@@ -224,6 +245,9 @@ def temporal_join_and_save(
         tolerance=tolerance,
         direction=direction,
     )
+    if not left_null.empty:
+        partial_join = pd.concat([partial_join, left_null], ignore_index=True, sort=False)
+    partial_join = partial_join.sort_values(order_column).drop(columns=[order_column]).reset_index(drop=True)
 
     if save_to_disk:
         join_path.parent.mkdir(parents=True, exist_ok=True)

@@ -70,6 +70,10 @@ st.set_page_config(page_title="AutoFeat Feature Discovery", layout="wide")
 ALGORITHM_ALIASES = {"XGB": "XGBoost", "GBM": "LightGBM", "RF": "RandomForest", "XT": "ExtraTrees"}
 
 
+def canonical_algorithm(series: pd.Series) -> pd.Series:
+    return series.replace(ALGORITHM_ALIASES)
+
+
 @st.cache_data(show_spinner=False)
 def load_summaries() -> pd.DataFrame:
     """Concat every `auto_pipeline_<label>_summary.csv`.
@@ -90,7 +94,7 @@ def load_summaries() -> pd.DataFrame:
         return pd.DataFrame()
     df = pd.concat(rows, ignore_index=True)
     if "algorithm" in df.columns:
-        df["algorithm"] = df["algorithm"].replace(ALGORITHM_ALIASES)
+        df["algorithm"] = canonical_algorithm(df["algorithm"])
         df = df.drop_duplicates(subset=["scenario", "approach", "algorithm"], keep="first")
 
     # Backfill n_features from the features CSV when the summary CSV has 0.
@@ -121,6 +125,7 @@ def _feature_counts_index() -> pd.DataFrame:
             fdf = pd.read_csv(f, usecols=["scenario", "approach", "algorithm", "feature"])
         except Exception:
             continue
+        fdf["algorithm"] = canonical_algorithm(fdf["algorithm"])
         g = (fdf.groupby(["scenario", "approach", "algorithm"])["feature"]
              .nunique().reset_index(name="n_features_from_features"))
         rows.append(g)
@@ -134,7 +139,10 @@ def load_features(label: str) -> pd.DataFrame:
     """Long-format feature importance for one scenario."""
     f = RESULTS_DIR / f"auto_pipeline_{label}_features.csv"
     if f.exists():
-        return pd.read_csv(f)
+        df = pd.read_csv(f)
+        if "algorithm" in df.columns:
+            df["algorithm"] = canonical_algorithm(df["algorithm"])
+        return df
     return pd.DataFrame()
 
 
@@ -244,7 +252,10 @@ def load_method_selection(label: str) -> pd.DataFrame:
     f = RESULTS_DIR / f"auto_pipeline_{label}_features.csv"
     if not f.exists():
         return pd.DataFrame(columns=["approach", "algorithm", "feature", "source_table", "importance"])
-    return pd.read_csv(f)
+    df = pd.read_csv(f)
+    if "algorithm" in df.columns:
+        df["algorithm"] = canonical_algorithm(df["algorithm"])
+    return df
 
 
 def method_graph(
@@ -276,6 +287,16 @@ def method_graph(
     # Keep only edges whose endpoints are both in the selected sources.
     used_edges = [e for e in discovered_edges
                   if e["from_table"] in sources and e["to_table"] in sources]
+    connected = {endpoint for e in used_edges for endpoint in (e["from_table"], e["to_table"])}
+    for source in sorted(sources - connected - {base_table_name}):
+        used_edges.append({
+            "from_table": base_table_name,
+            "to_table": source,
+            "from_col": "selected",
+            "to_col": "feature_source",
+            "weight": 0.0,
+            "synthetic": True,
+        })
 
     # Per-source feature count (used for node sizing + side panel).
     feat_count = (
@@ -314,6 +335,12 @@ def neo4j_stats() -> Tuple[Optional[int], Optional[int], Optional[str]]:
 def run_pipeline(args: List[str], log_box) -> int:
     """Run the auto_pipeline as a subprocess, streaming output to log_box."""
     env = os.environ.copy()
+    env["PYTHONPATH"] = f"{ROOT / 'src'}{os.pathsep}{env.get('PYTHONPATH', '')}".rstrip(os.pathsep)
+    seed = env.get("AUTOFEAT_SEED", "42")
+    env.setdefault("AUTOFEAT_SEED", seed)
+    env.setdefault("PYTHONHASHSEED", seed)
+    env.setdefault("USE_TF", "0")
+    env.setdefault("TRANSFORMERS_NO_TF", "1")
     cmd = [sys.executable, "-m", "feature_discovery.auto_pipeline"] + args
     log_box.text("$ " + " ".join(cmd) + "\n")
     proc = subprocess.Popen(
@@ -347,13 +374,15 @@ with tab_results:
                 "Run a scenario in the *Run on your data* tab to populate.")
     else:
         scenarios_available = sorted(summary.scenario.unique())
-        algorithms_available = sorted(summary.algorithm.unique())
 
         c1, c2 = st.columns(2)
         scenario = c1.selectbox("Scenario", scenarios_available, index=0)
-        algorithm = c2.selectbox("Algorithm", algorithms_available,
-                                 index=algorithms_available.index("XGBoost")
-                                 if "XGBoost" in algorithms_available else 0)
+        algorithms_available = sorted(summary[summary.scenario == scenario].algorithm.unique())
+        algorithm = c2.selectbox(
+            "Algorithm",
+            algorithms_available,
+            index=algorithms_available.index("XGBoost") if "XGBoost" in algorithms_available else 0,
+        )
         scen_sum = summary[(summary.scenario == scenario) & (summary.algorithm == algorithm)]
 
         # Scenario context strip
@@ -473,23 +502,33 @@ with tab_compare:
         col_a, col_b = st.columns([3, 2])
         with col_a:
             st.subheader("Accuracy by scenario × approach")
+            chart_data = sub.copy()
+            chart_data["scenario_approach"] = (
+                chart_data["scenario"].astype(str)
+                + " · "
+                + chart_data["approach"].astype(str)
+            )
             chart = (
-                alt.Chart(sub)
+                alt.Chart(chart_data)
                 .mark_bar()
                 .encode(
-                    y=alt.Y("scenario:N", title=None, sort=None),
+                    y=alt.Y("scenario_approach:N", title=None, sort=None),
                     x=alt.X("accuracy:Q", title="Accuracy / R²",
-                            scale=alt.Scale(domain=[0, 1])),
+                            scale=alt.Scale(
+                                domain=[
+                                    min(0.0, float(sub["accuracy"].min())),
+                                    max(1.0, float(sub["accuracy"].max())),
+                                ]
+                            )),
                     color=alt.Color("approach:N", scale=alt.Scale(
                         domain=list(APPROACH_COLOURS.keys()),
                         range=list(APPROACH_COLOURS.values()),
                     )),
-                    yOffset="approach:N",
                     tooltip=["scenario", "approach",
                              alt.Tooltip("accuracy:Q", format=".4f"),
                              "n_features"],
                 )
-                .properties(height=max(220, 60 * sub.scenario.nunique()))
+                .properties(height=max(260, 20 * len(chart_data)))
             )
             st.altair_chart(chart, use_container_width=True)
 
@@ -574,6 +613,12 @@ with tab_run:
         with c2:
             temporal_key = st.text_input("Temporal key (optional, e.g. 'time')", value="")
             temporal_tol = st.number_input("Temporal tolerance (seconds)", min_value=0, max_value=3600, value=60, step=10)
+            temporal_direction = st.selectbox(
+                "Temporal direction",
+                ["nearest", "backward", "forward"],
+                index=0,
+                help="Use backward for forecasting or any workflow where future rows must not leak.",
+            )
             skip_transformer = st.checkbox(
                 "Skip transformer discovery (use only uploaded connections.csv)",
                 value=False,
@@ -621,7 +666,11 @@ with tab_run:
                 "--label", label,
             ]
             if temporal_key.strip():
-                args += ["--temporal-key", temporal_key.strip(), "--temporal-tolerance", str(temporal_tol)]
+                args += [
+                    "--temporal-key", temporal_key.strip(),
+                    "--temporal-tolerance", str(temporal_tol),
+                    "--temporal-direction", temporal_direction,
+                ]
             if skip_transformer:
                 args += ["--no-transformer-discovery"]
 
@@ -838,8 +887,9 @@ with tab_graph:
                 label = (e["from_col"] if e["from_col"] == e["to_col"]
                          else f'{e["from_col"]}→{e["to_col"]}')
                 pen = 1 + 3 * (e["weight"] - wmin) / max(wmax - wmin, 1e-9)
+                style = "dashed" if e.get("synthetic") else "solid"
                 dot.edge(e["from_table"], e["to_table"],
-                         label=label, penwidth=f"{pen:.1f}")
+                         label=label, penwidth=f"{pen:.1f}", style=style)
 
             st.graphviz_chart(dot, use_container_width=True)
             st.caption(

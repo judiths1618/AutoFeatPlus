@@ -1,5 +1,7 @@
 import logging
+import hashlib
 import os
+import shutil
 import time
 from typing import Optional, List
 
@@ -53,7 +55,42 @@ def _with_companion(algorithms_to_run: dict) -> dict:
     hp = dict(algorithms_to_run)
     companion = COMPANION_MODEL if COMPANION_MODEL not in hp else "XGB"
     hp.setdefault(companion, {})
-    return hp
+    return _seed_hyperparameters(hp)
+
+
+def _seed_hyperparameters(hyperparameters: dict) -> dict:
+    """Inject model-level seeds where the underlying estimator supports them."""
+    seeded = {}
+    seed_params = {
+        "XGB": {"random_state": SEED, "seed": SEED},
+        "RF": {"random_state": SEED},
+        "XT": {"random_state": SEED},
+        "GBM": {"random_state": SEED},
+        "LR": {"random_state": SEED},
+    }
+    for model_name, params in hyperparameters.items():
+        model_params = dict(params or {})
+        for key, value in seed_params.get(model_name, {}).items():
+            model_params.setdefault(key, value)
+        seeded[model_name] = model_params
+    return seeded
+
+
+def _model_path(dataframe: pd.DataFrame, target_column: str, algorithms_to_run: dict) -> str:
+    """Return a deterministic clean AutoGluon output path for this fit."""
+    digest_input = "|".join(
+        [
+            str(SEED),
+            target_column,
+            ",".join(map(str, dataframe.columns)),
+            str(dataframe.shape),
+            ",".join(sorted(algorithms_to_run)),
+        ]
+    )
+    digest = hashlib.sha1(digest_input.encode("utf8")).hexdigest()[:12]
+    path = AUTO_GLUON_FOLDER / f"models_seed_{SEED}_{digest}"
+    shutil.rmtree(path, ignore_errors=True)
+    return str(path)
 
 
 def get_hyperparameters(algorithm: Optional[str] = None) -> List[dict]:
@@ -162,7 +199,7 @@ def run_auto_gluon(
         label=target_column,
         problem_type=problem_type,
         verbosity=0,
-        path=AUTO_GLUON_FOLDER / "models",
+        path=_model_path(X_train, target_column, algorithms_to_run),
     ).fit(
         train_data=X_train,
         hyperparameters=_with_companion(algorithms_to_run),
@@ -235,7 +272,7 @@ def evaluate_all_algorithms(
     all_results = []
     df = AutoMLPipelineFeatureGenerator(
         enable_text_special_features=False, enable_text_ngram_features=False
-    ).fit_transform(X=dataframe)
+    ).fit_transform(X=dataframe, random_state=SEED, random_seed=SEED)
 
     # After the generator, check that at least one feature column survived.
     remaining_features = [c for c in df.columns if c != target_column]

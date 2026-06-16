@@ -227,6 +227,7 @@ def main() -> None:
         dataset_type=dataset_type,
         temporal_key=temporal_key,
         temporal_tolerance=args.temporal_tolerance,
+        temporal_direction=args.temporal_direction,
     )
 
     print(f"\n{'='*60}")

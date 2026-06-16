@@ -7,11 +7,18 @@ from ITMO_FS.filters.multivariate import CMIM, MRMR
 from ITMO_FS.utils.information_theory import entropy, conditional_mutual_information
 from sklearn.preprocessing import KBinsDiscretizer
 
+from feature_discovery.config import SEED
 from feature_discovery.helpers.information_theory import conditional_entropy
 from feature_discovery.autofeat_pipeline.feature_selection import pearson_correlation, spearman_correlation
 
 
-xxh = xxhash.xxh64(seed=42)
+xxh = xxhash.xxh64(seed=SEED)
+
+
+def _stable_digest(value) -> int:
+    hasher = xxhash.xxh64(seed=SEED)
+    hasher.update(repr(value).encode("utf8"))
+    return hasher.intdigest()
 
 
 class RelevanceRedundancy:
@@ -29,7 +36,8 @@ class RelevanceRedundancy:
         if self.target_column in new_features:
             new_features.remove(self.target_column)
 
-        new_common_features = list(set(dataframe.columns).intersection(set(new_features)))
+        requested = set(new_features)
+        new_common_features = [col for col in dataframe.columns if col in requested]
         if len(new_common_features) == 0:
             return []
 
@@ -52,7 +60,7 @@ class RelevanceRedundancy:
         if len(final_feature_scores_rel) == 0:
             return []
 
-        return sorted(final_feature_scores_rel, key=lambda s: s[1], reverse=True)
+        return sorted(final_feature_scores_rel, key=lambda s: (-s[1], s[0]))
 
     def measure_redundancy(
         self,
@@ -117,7 +125,7 @@ class RelevanceRedundancy:
         feature_scores = list(zip(np.array(dataframe.columns)[np.array(new_features_int)], normalised_scores))
         final_feature_scores_mrmr = [(name, value) for name, value in feature_scores if value > 0]
 
-        return sorted(final_feature_scores_mrmr, key=lambda s: s[1], reverse=True)
+        return sorted(final_feature_scores_mrmr, key=lambda s: (-s[1], s[0]))
 
     def measure_relevance_and_redundancy(
         self, dataframe: pd.DataFrame, selected_features: List[str], new_features: List[str], target_column: pd.Series
@@ -155,28 +163,28 @@ class RelevanceRedundancy:
         return entr - cond_entropy
 
     def cached_conditional_mutual_information(self, x, y, z):
-        h1 = hash(str(list(zip(x, z))))
+        h1 = _stable_digest(list(zip(x, z)))
         if h1 in self.dataframe_entropy:
             entropy_xz = self.dataframe_entropy[h1]
         else:
             entropy_xz = entropy(list(zip(x, z)))
             self.dataframe_entropy[h1] = entropy_xz
 
-        h2 = hash(str(list(zip(y, z))))
+        h2 = _stable_digest(list(zip(y, z)))
         if h2 in self.dataframe_entropy:
             entropy_yz = self.dataframe_entropy[h2]
         else:
             entropy_yz = entropy(list(zip(y, z)))
             self.dataframe_entropy[h2] = entropy_yz
 
-        h3 = hash(str(list(zip(x, y, z))))
+        h3 = _stable_digest(list(zip(x, y, z)))
         if h3 in self.dataframe_entropy:
             entropy_xyz = self.dataframe_entropy[h3]
         else:
             entropy_xyz = entropy(list(zip(x, y, z)))
             self.dataframe_entropy[h3] = entropy_xyz
 
-        h4 = hash(str(z))
+        h4 = _stable_digest(z)
         if h4 in self.dataframe_entropy:
             entropy_z = self.dataframe_entropy[h4]
         else:
@@ -189,7 +197,8 @@ class RelevanceRedundancy:
 def measure_relevance(
     dataframe: pd.DataFrame, feature_names: List[str], target_column: pd.Series
 ) -> Tuple[Optional[list], list]:
-    common_features = list(set(dataframe.columns).intersection(set(feature_names)))
+    requested = set(feature_names)
+    common_features = [col for col in dataframe.columns if col in requested]
 
     if len(common_features) == 0:
         return None, []

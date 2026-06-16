@@ -168,7 +168,7 @@ datasets/KUL/
 *.zip
 *.tar
 *.tar.gz
-*.csv
+# *.csv
 *.mat
 *.pt
 *.pth
