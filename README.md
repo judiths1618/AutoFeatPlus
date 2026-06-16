@@ -5,9 +5,11 @@ original AutoFeat join-path discovery system**
 ([*"AutoFeat: Transitive Feature Discovery over Join Paths"*](docs/assets/papers/ICDE_FeatureDiscovery.pdf),
 ICDE). The original BFS-discovery + mRMR-selection core in
 [`src/feature_discovery/autofeat_pipeline/`](src/feature_discovery/autofeat_pipeline/)
-is preserved verbatim; everything around it has been re-targeted at real
-5G/6G telemetry workloads, made reproducible, and stress-tested against the
-methodological footguns that affected the published results.
+is still the backbone, with targeted correctness fixes for temporal joins,
+deterministic feature ordering, and DataOps materialisation. Everything around
+it has been re-targeted at real 5G/6G telemetry workloads, made reproducible,
+and stress-tested against the methodological footguns that affected the
+published results.
 
 It answers two distinct questions on 5G/6G telemetry data:
 
@@ -41,15 +43,15 @@ for one-click comparison.
 
 ## Improvements over the original AutoFeat
 
-This repository keeps the original BFS-discovery / mRMR feature-selection core
-([autofeat_pipeline/](src/feature_discovery/autofeat_pipeline/)) intact but fixes several methodology and reliability issues that affected the published results.
+This repository keeps the original BFS-discovery / mRMR feature-selection design
+([autofeat_pipeline/](src/feature_discovery/autofeat_pipeline/)) but fixes several methodology and reliability issues that affected the published results.
 Each row below points at the code that changed.
 
 ### Methodology
 
 | Improvement | What was wrong before | Where it's fixed |
 |---|---|---|
-| **End-to-end reproducibility** — a single `--seed` controls every RNG (train/test split, AutoGluon model seeds, group sampling, feature-selection tie-breaks). `PYTHONHASHSEED` is pinned by a one-shot re-exec so `set`/`dict` ordering is also stable. | The original pipeline used a mix of hard-coded `random_state=10` / `42` and AutoGluon's default seeding — and `set`/`dict` ordering left feature-selection tie-breaks **non-deterministic** even with all RNGs seeded. Two consecutive runs gave different `AutoFeat` numbers. | [`auto_pipeline._ensure_reproducible`](src/feature_discovery/auto_pipeline.py), `config.SEED`, every `random_state=` routed through it |
+| **End-to-end reproducibility** — a single `--seed` controls every RNG (train/test split, AutoGluon model seeds, group sampling, transformer value sampling, feature-selection tie-breaks). `PYTHONHASHSEED` is pinned by a one-shot re-exec; remaining set/hash-sensitive paths use stable ordering or `xxhash`. AutoGluon model directories are deterministic and cleared before each fit. | The original pipeline used a mix of hard-coded `random_state=10` / `42`, AutoGluon's default seeding, stale model directories, Python's salted `hash()`, and unordered `set` iteration. Two consecutive runs could pick different features or reuse old model state. | [`auto_pipeline._ensure_reproducible`](src/feature_discovery/auto_pipeline.py), `config.SEED`, [`evaluation_algorithms._model_path`](src/feature_discovery/experiments/evaluation_algorithms.py), stable feature ordering in [`join_path_feature_selection.py`](src/feature_discovery/autofeat_pipeline/join_path_feature_selection.py) |
 | **Like-for-like evaluation split** — when `--temporal-key` is set, BASE, JOIN_ALL_BFS, JOIN_ALL_BFS_Filter and AutoFeat all use the same chronological 80/20 split. | Original code only passed `time_column` into AutoFeat's evaluator, so BASE used a *random* split and AutoFeat used a *temporal* split — the headline `Δ AutoFeat − BASE` compared two different test sets. | [`baselines._resolve_time_column`](src/feature_discovery/experiments/baselines.py), `time_column=dataset.temporal_key` threaded through |
 | **Non-redundant model comparison** — when `--algorithms XGB` is requested the runner trains **XGBoost + RandomForest** (companion model) instead of XGBoost + AutoGluon's degenerate `WeightedEnsemble_L2` (which for a single base model just duplicates it). | Every result row appeared twice with identical numbers under different algorithm names. | [`evaluation_algorithms._with_companion`](src/feature_discovery/experiments/evaluation_algorithms.py), `fit_weighted_ensemble=False` |
 | **Honest scenario lakes** — every benchmark scenario lake is stripped of target-percentile siblings (`lat50/75/95/min`, `mean`) and identity columns (`user_id`, `sample_id`) before evaluation. | The original showcases harvested target proxies — e.g. scenario 2C's "feature recovery" lifted R² by using `lat95` to predict `lat99`; KUL's "compression test" used `user_id` to predict `target_x`. Both inflated the showcase numbers. | [`prepare_augmentation_scenarios._strip_target_proxies`](scripts/prepare_augmentation_scenarios.py), `build_scenarioK` drops identity columns |
@@ -68,11 +70,12 @@ Each row below points at the code that changed.
 | AutoGluon `predictor.feature_importance(feature_stage="original")` raised `KeyError: ['<col>.day', '<col>.dayofweek']` whenever a string-datetime column survived into the lake | Lost the entire JOIN_ALL row even though `evaluate()` succeeded | try/except wrapper preserves the accuracy row ([`evaluation_algorithms.py`](src/feature_discovery/experiments/evaluation_algorithms.py)); prep script also drops `dt`/`datetime` columns |
 | Spearman filter ranked features in the *post*-generator frame, then indexed the *pre*-generator dataframe → `KeyError` on AutoGluon-synthesised feature names | `JOIN_ALL_BFS_Filter` row missing whenever any datetime column entered the lake | Filter selected features against `dataframe.columns` first ([`baselines.py`](src/feature_discovery/experiments/baselines.py)) |
 | Ingest never explicitly `create_node()`-ed; it relied on `connections.csv`-driven `MERGE` to *implicitly* create nodes | Heterogeneous-lake refusal scenarios with no `connections.csv` blew up with `'NoneType' has no attribute 'get'` | Always `create_node()` per enumerated CSV ([`ingest_data.py`](src/feature_discovery/dataset_relation_graph/ingest_data.py)) |
+| Temporal joins behaved unlike left joins | Rows with null temporal keys were dropped, base row order changed after the required `merge_asof` sort, and `--temporal-direction backward` was exposed but not threaded into AutoFeat/evaluation. DataOps exports could differ from evaluated joins. | Preserve base rows/order in [`temporal_join_and_save`](src/feature_discovery/autofeat_pipeline/join_data.py), thread `temporal_direction` through `Dataset → AutoFeat → evaluate_paths`, and materialise DataOps outputs through the same join-path reconstruction used for evaluation |
 
 ### Tooling & UX
 
 - **Privacy-safe logging** — `config.rel()` renders every printed path relative to the project root, so neither absolute paths nor your username leak into console output, run logs or committed result files.
-- **Inline graph view in the Streamlit dashboard** — `tab_graph` now renders an interactive Graphviz of the live Neo4j graph (or any picked scenario's `connections.csv`) with degree-weighted node sizes, weight-thresholded edge filters, and a top-table panel — instead of just listing Cypher snippets.
+- **Inline graph view in the Streamlit dashboard** — `tab_graph` now renders an interactive Graphviz of the live Neo4j graph (or any picked scenario's `connections.csv`) with degree-weighted node sizes, weight-thresholded edge filters, method overlays, and a top-table panel. The dashboard is compatible with Altair/Vega-Lite v4 (no `yOffset` encoding).
 - **CI runs every test, not just one file** — [`.github/workflows/ci.yml`](.github/workflows/ci.yml) discovers `test_*.py` under `src/` with `pytest`. [`conftest.py`](conftest.py) at the repo root puts `src/` on `sys.path` so `pytest` works without `PYTHONPATH`.
 - **Time-gap segmenter** for any EUR telemetry CSV with a `time` column → [`scripts/split_eur_by_time_gaps.py`](scripts/split_eur_by_time_gaps.py).
 - **One-shot runner for the whole benchmark** — [`scripts/run_all_scenarios.sh`](scripts/run_all_scenarios.sh).
@@ -82,38 +85,47 @@ Each row below points at the code that changed.
 ```text
 src/feature_discovery/
 ├── auto_pipeline.py                     # end-to-end AutoFeat CLI
+├── augmentation/                        # DataOps materialisation runner
 ├── autofeat_pipeline/                   # BFS joins + mRMR feature selection
+├── baselines/                           # JOIN_ALL / ARDA-style baselines
 ├── dataset_relation_graph/              # metadata/transformer relationship discovery
 ├── experiments/                         # baselines, AutoFeatPlus, evaluation helpers
+├── graph_processing/                    # graph utilities used by discovery/evaluation
+├── helpers/                             # shared config, path, and utility helpers
 └── pipelines/base_table_pipeline.py     # base-table relationship planning helpers
 
-scripts/                                 # selected entry points — `ls scripts/` for the full ~20
+scripts/                                 # selected entry points
 ├── prepare_augmentation_scenarios.py    # builds the 9 benchmark scenarios into scenarios/
 ├── split_eur_by_time_gaps.py            # segments EUR telemetry CSVs at large time gaps
 ├── run_all_scenarios.sh                 # one-shot 9-scenario benchmark runner
 ├── smoke_test.py                        # `make smoke` — accuracy-floor regression check
+├── build_benchmark_scenario_report.py   # scenario evidence report generator
 ├── benchmark_eur_darts.py               # Track B — Darts forecasting × augmentation
 ├── benchmark_eur_ts_augmented_downstream.py
 │                                         # Track C — bridge / downstream utility
 ├── benchmark_eur_autofeat_plus_local.py # standalone AutoFeatPlus benchmark (pre-pipeline)
 ├── benchmark_kul_local.py               # KUL-only local benchmark (no Neo4j)
+├── infer_dataset_relationships.py       # offline relationship discovery helper
 ├── summarize_results.py                 # AutoFeat scenario summary
 ├── summarize_autofeat_plus_results.py   # AutoFeatPlus summary
 ├── plot_base_autofeat_curves.py         # BASE vs AutoFeat plots
 ├── plot_autofeat_plus_results.py        # AutoFeatPlus comparison plots
 ├── run_base_table_pipeline.py           # relationship/use-case reports
-└── …                                    # diagnose, infer_dataset_relationships, etc.
+└── diagnose.py                          # quick diagnostics for data/result issues
 
 dashboards/
 └── augmentation_dashboard.py            # AutoFeat dashboard (Results, Compare,
-                                          # Run-on-your-data, inline graph view)
+                                          # Run-on-your-data, graph view)
 
 conftest.py                              # puts src/ on sys.path for pytest
 .github/workflows/ci.yml                 # discovers + runs every test_*.py
+docker-compose.yml                       # local Neo4j service for graph discovery
+Makefile                                 # setup, smoke, demo, dashboard shortcuts
 
 datasets/
 ├── EUR/6907619/                         # raw 6G EUR telemetry tables
-└── KUL/                                 # raw MaMIMO CSI data layouts
+├── KUL/                                 # raw MaMIMO CSI data layouts
+└── aug_dash_*/                          # dashboard-staged uploads, if used
 
 scenarios/
 ├── scenarios.yaml                       # benchmark manifest
@@ -128,6 +140,12 @@ results/6g_data/
 ├── downstream/ts_augmented_downstream.csv  # Track C bridge utility
 ├── run_logs/                            # per-scenario stdout/stderr
 ├── SUMMARY.md  +  summary.csv           # cross-scenario rollup (`summarize_results.py`)
+├── benchmark_scenarios_report.md        # scenario-centric evidence report
+├── benchmark_scenarios_summary.csv      # normalized input for that report
+└── figures/                             # regenerated report plots
+
+AutogluonModels/                         # generated AutoGluon model artifacts
+neo4j-data/                              # local Docker Neo4j volume/state
 ```
 
 ## Environment Setup
@@ -175,24 +193,58 @@ make setup
 
 ## Data Layout
 
-The checked-in EUR layout used by the scripts is:
+The project keeps immutable inputs, generated benchmark scenarios, and run
+outputs in separate folders:
 
 ```text
-datasets/EUR/
-├── metadata.txt
-└── 6907619/
-    ├── rabbitmq-performance.csv
-    ├── amf-performance.csv
-    ├── golang-web-server-performance.csv
-    ├── python-web-server-performance.csv
-    ├── connections.csv
-    └── split_output/
+datasets/
+├── EUR/
+│   ├── metadata.txt
+│   └── 6907619/
+│       ├── rabbitmq-performance.csv
+│       ├── amf-performance.csv
+│       ├── golang-web-server-performance.csv
+│       ├── python-web-server-performance.csv
+│       ├── connections.csv
+│       └── split_output/                # optional time-gap segments
+└── KUL/                                 # raw MaMIMO CSI layouts
+
+scenarios/
+├── scenarios.yaml                       # canonical 9-scenario manifest
+├── scenario1/                           # direct EUR joins by n
+├── scenario2c/                          # reduced RabbitMQ + engineered EUR features
+├── scenarioA_lat95/                     # temporal join stress test, lat95 target
+├── scenarioA_lat99/                     # temporal join stress test, lat99 target
+├── scenarioB_seg01/                     # AMF time-segment transfer
+├── scenarioK_csi/                       # KUL CSI feature transfer
+├── scenarioN_target_n/                  # target-n variant
+├── scenarioR_resource/                  # EUR resource-counter transfer
+└── scenarioU_unrelated/                 # unrelated-lake refusal scenario
+
+results/6g_data/
+├── auto_pipeline_<label>.csv            # raw rows: approach × algorithm
+├── auto_pipeline_<label>_summary.csv    # slim result rows
+├── auto_pipeline_<label>_features.csv   # long-format feature importance
+├── augmented_datasets/                  # DataOps-ready materialised joins
+├── run_logs/                            # per-scenario stdout/stderr
+├── summary.csv + SUMMARY.md             # cross-scenario rollup
+├── benchmark_scenarios_report.md        # scenario evidence report
+├── benchmark_scenarios_summary.csv      # report input table
+├── darts/                               # Track B forecasting outputs
+├── downstream/                          # Track C downstream utility outputs
+└── figures/                             # regenerated plots
+
+AutogluonModels/                         # generated model artifacts
+neo4j-data/                              # local Docker Neo4j state
 ```
 
-Scenario builders write reproducible benchmark folders under `scenarios/`, for
-example `scenarios/scenario2c/` and `scenarios/scenarioB_seg01/`. Raw inputs
-(`datasets/EUR/`, `datasets/KUL/`) stay separate so a scenario rebuild can never
-corrupt the source data.
+Each generated scenario folder contains a `metadata.txt`, one base table, lake
+tables, and either explicit `connections.csv` edges or
+`connections_transformer.csv` edges discovered by the relationship transformer.
+Rebuild scenarios with `python scripts/prepare_augmentation_scenarios.py --all`;
+raw sources in `datasets/EUR/` and `datasets/KUL/` are never mutated by that
+step. The dashboard's run tab may also stage uploaded inputs under
+`datasets/aug_dash_*`.
 
 ## Quick Reproduction Path
 
@@ -224,6 +276,7 @@ python -m feature_discovery.auto_pipeline \
   --label scenarioK_csi
 
 python scripts/summarize_results.py
+python scripts/build_benchmark_scenario_report.py
 ```
 
 The same flow is available as:
@@ -239,6 +292,7 @@ results/6g_data/auto_pipeline_scenario2c.csv
 results/6g_data/auto_pipeline_scenarioK_csi.csv
 results/6g_data/SUMMARY.md
 results/6g_data/summary.csv
+results/6g_data/benchmark_scenarios_report.md
 ```
 
 ### Make Targets
@@ -331,13 +385,12 @@ Useful options:
 
 ### Reproducibility
 
-`auto_pipeline` is deterministic: a given `--seed` (default `42`) produces
-bit-for-bit identical metrics across runs. The seed drives the train/test split,
-per-model RNGs, and group sampling, and the pipeline pins `PYTHONHASHSEED` (by
-re-exec'ing itself once) so `set`/`dict` ordering — which feature-selection
-tie-breaks depend on — is also fixed. Override globally with `--seed N` or the
-`AUTOFEAT_SEED` environment variable. Note that changing the seed changes the
-split and therefore the absolute metrics; compare approaches only within one seed.
+`auto_pipeline` is seed-controlled: a given `--seed` (default `42`) drives the
+train/test split, per-model RNGs, value sampling, stable feature ordering, and
+AutoGluon model output paths. The CLI also pins `PYTHONHASHSEED` by re-exec'ing
+itself once. For benchmark reruns, keep the same package versions, data,
+`AUTOFEAT_AG_TIME_LIMIT`, and seed; changing any of those can change absolute
+metrics, so compare approaches only within one run/seed.
 
 ### Summarize And Plot AutoFeat Results
 
@@ -483,7 +536,7 @@ streamlit run dashboards/augmentation_dashboard.py
 | **Results** | Per-scenario `BASE / Join_All_BFS / Filter / AutoFeat / AutoFeatPlus` rows (accuracy + correct `n_features` for every approach, after the source-side fix), plus a **Feature-importance drilldown**: deduplicated Approach selectbox; **Top-N slider** (1 → min(rows, 200)) lets you sweep down K_csi's 3 200-feature Join_All_BFS tail; a **source-table tally** expander shows how many of the top-N came from each lake table; explicit message distinguishes "trained on 0 input features" from "AutoGluon importance crash" |
 | **Compare** | Cross-scenario accuracy pivot (`scenario × approach × algorithm`), enriched with `scenarios/scenarios.yaml` context. `Δ AutoFeat−BASE` and `Δ AutoFeatPlus−BASE` both shown. **Feature counts panel** under the accuracy pivot — same shape, with `n_features` per (scenario × approach), backfilled from the per-scenario features CSV for older summaries that have `n_features = 0` |
 | **Run on your data** | Upload a base table + lake CSVs (+ optional `connections.csv` and `metadata.txt`) and trigger the pipeline |
-| **Graph** | Three pickers: **Source** (`Live Neo4j` or any scenario), **Method** (`All discovered edges` or one of `BASE` / `Join_All_BFS` / `Filter` / `AutoFeat` / `AutoFeatPlus`), **Algorithm** (`XGBoost` / `RandomForest`). Method mode draws **only the tables that method actually used**, sized by feature count, with a side panel listing every selected feature ranked by \|importance\|. Useful for spotting artefacts — on `scenarioR_resource`, `Join_All_BFS` lights up 4 tables (base + 3 peer-service `*-resources.csv`, 8 features), while `AutoFeat` lights up only 1 (base alone, same 4 columns as BASE) — yet AutoFeat's R² is +0.43 above BASE, evidence that the lift is from the trivial-self-join detour in `evaluate_paths`, not from any joined feature |
+| **Graph** | Three pickers: **Source** (`Live Neo4j` or any scenario), **Method** (`All discovered edges` or one of `BASE` / `Join_All_BFS` / `Filter` / `AutoFeat` / `AutoFeatPlus`), **Algorithm** (`XGBoost` / `RandomForest`). Method mode draws **only the tables that method actually used**, sized by feature count, with a side panel listing every selected feature ranked by \|importance\|. Standalone selected source tables are shown with dashed synthetic links so the method overlay never silently hides a selected table. |
 
 Time-series augmentation results (Track B + Track C) are written to
 `results/6g_data/darts/evaluation_summary.csv` and
@@ -511,6 +564,8 @@ python scripts/plot_autofeat_plus_results.py \
   --output-dir results/6g_data/figures
 
 python scripts/plot_base_autofeat_curves.py
+
+python scripts/build_benchmark_scenario_report.py
 ```
 
 ## Current Findings To Expect
@@ -520,11 +575,13 @@ chronological 80/20 test window when `--temporal-key` is set, so the deltas
 below are like-for-like. The 9 scenarios are explicitly tagged 🟢 positive /
 🔴 negative / 🟡 ambiguous in [scenarios/scenarios.yaml](scenarios/scenarios.yaml).
 
-XGBoost (representative snapshot — re-run with `make demo` or `bash scripts/run_all_scenarios.sh`):
+XGBoost (representative snapshot from the latest full run — re-run with
+`bash scripts/run_all_scenarios.sh`, then `python scripts/summarize_results.py`
+and `python scripts/build_benchmark_scenario_report.py`):
 
 | Class | Scenario | BASE | AutoFeat | AutoFeatPlus | Δ AF | Δ AF+ |
 |---|---|---:|---:|---:|---:|---:|
-| 🟢 P | `scenario2c` (feature recovery, proxy-free lake) | 0.5395 | 0.9417 | **0.9518** | +0.402 | **+0.412** |
+| 🟢 P | `scenario2c` (feature recovery, proxy-free lake) | 0.5395 | 0.9385 | **0.9518** | +0.399 | **+0.412** |
 | 🟢 P | `scenarioR_resource` (cross-app contention, no target overlap) | 0.5395 | **0.9724** | 0.5373 | **+0.433** | −0.002 |
 | 🟢 P | `scenarioK_csi` (wide-lake compression, identity-free) | 0.0000 | **1.0000** | 0.9948 | **+1.000** | **+0.995** |
 | 🔴 N | `scenario1` (per-`n` aggregated, structurally degenerate) | 0.9662 | 0.9662 | 0.9454 | 0.000 | −0.021 |
@@ -532,17 +589,20 @@ XGBoost (representative snapshot — re-run with `make demo` or `bash scripts/ru
 | 🔴 N | `scenarioU_unrelated` (heterogeneous lake — KUL → rabbitmq) | 0.9508 | 0.9765 | 0.9508 | +0.026† | 0.000 |
 | 🟡 A | `scenarioA_lat95` (cross-app temporal, lake `lat*` stripped) | 0.9551 | 0.9796 | 0.9048 | +0.025 | −0.050 |
 | 🟡 A | `scenarioA_lat99` (cross-app temporal, lake `lat*` stripped) | 0.9508 | 0.9765 | 0.8845 | +0.026 | −0.066 |
-| 🟡 A | `scenarioB_amf_seg01` (within-app segment pooling) | 0.9412 | 0.9162 | 0.7742 | −0.025 | −0.167 |
+| 🟡 A | `scenarioB_amf_seg01` (within-app segment pooling) | 0.9412 | 0.9331 | 0.7742 | −0.008 | −0.167 |
 
 † scenarioU's +0.026 (AF) and 0.000 (AF+) is **intra-base feature selection**,
 not lake augmentation — `Join_All_BFS` is identical to BASE.
 
 What this tells us:
-- **AutoFeat lifts where lake information genuinely exists** (2C: missing
-  runtime; K_csi: wide CSI lake; B: AMF segment pooling).
-- **AutoFeat refuses cleanly** when there's nothing to add (scenario1's per-`n`
-  collapse to `f(n)`; scenarioN's shallow top-level cross-app EUR lake;
-  scenarioU's heterogeneous KUL lake).
+- **AutoFeat lifts where selected lake information genuinely exists** (2C:
+  missing runtime; K_csi: wide CSI lake).
+- **AutoFeat usually refuses cleanly** when there's nothing to add (scenario1's
+  per-`n` collapse to `f(n)`; scenarioN's shallow top-level cross-app EUR lake).
+  `scenarioU_unrelated` and `scenarioR_resource` still deserve inspection:
+  AutoFeat selects only base-table features but reports a higher score than
+  BASE, so the graph/feature-source views should be used before interpreting
+  that as augmentation.
 - **Ambiguous lifts are small** (~±0.03) — within the noise of feature
   selection on the joined frame.
 
@@ -573,29 +633,25 @@ Read from this:
   only the base table. On the refusal scenarios (1, N, U) that's the correct
   behaviour. On scenarioR_resource it's **surprising** — `Join_All_BFS`
   reaches 3 peer-service tables (8 features), but AutoFeat's mRMR ranks the
-  base columns higher and keeps them only. The +0.433 R² lift comes from
-  AutoFeat's evaluation path (the trivial-self-join detour through
-  `evaluate_paths`), not from new lake features. This is a known artifact
-  worth tracking — see the open-issues note in the AutoFeat audit notebook.
+  base columns higher and keeps them only. Treat the +0.433 R² lift as a
+  selection/evaluation caveat, not evidence that AutoFeat selected useful
+  peer-service resource features.
 
 ### AutoFeat vs AutoFeatPlus — when does each one win?
 
 | Observation | Mechanism |
 |---|---|
-| **AutoFeatPlus matches or beats AutoFeat when the lake's strongest features are top-utility** (scenario2c +0.412 vs +0.402; K_csi +0.995 vs +1.000) | `score_plus` ranks `ram_usage` / `cpu_usage` / subcarrier features highly on their own merit; no interaction effect is needed |
-| **AutoFeat's +0.43 R² lift on `scenarioR_resource` is *not* from selecting lake features** — the `n_features` pivot shows AutoFeat used the same 4 base columns as BASE (1 source table). The lift comes from `evaluate_paths` running a base-only "join" detour that shifts the temporal split's row ordering. AutoFeatPlus doesn't benefit from that artefact and reports the cleaner −0.002 number. | `ablation.autofeat → evaluate_paths` always wraps the chosen path through `pd.merge_asof`/`merge` even when the path is just the base node; the row order in the resulting frame differs from `non_augmented`'s raw read, and that order change propagates through the chronological split |
+| **AutoFeatPlus matches or beats AutoFeat when the lake's strongest features are top-utility** (scenario2c +0.412 vs +0.399; K_csi +0.995 vs +1.000) | `score_plus` ranks `ram_usage` / `cpu_usage` / subcarrier features highly on their own merit; no interaction effect is needed |
+| **AutoFeat's +0.43 R² lift on `scenarioR_resource` is *not* from selecting lake features** — the `n_features` pivot and feature-source rows show AutoFeat used the same 4 base columns as BASE (1 source table), while `Join_All_BFS` did reach peer-service resource tables. Treat that row as a selection/evaluation caveat rather than evidence of successful lake augmentation. AutoFeatPlus reports the cleaner −0.002 number. | AutoFeat's top path can still be a base-only path after mRMR ranking, so the headline AutoFeat score must be interpreted together with `n_features` and source-table provenance. The dashboard Graph tab makes this visible. |
 | **AutoFeatPlus is more conservative on refusal scenarios** (1, N, U deltas all ≤ 0) | The top-k cap + privacy/missing/cost penalties trim the candidate set; fewer features means a tighter fit on already-strong BASEs and a slightly worse number |
 | **The honest privacy trade-off lives in the negative deltas on ambiguous cases** (A_lat95 −0.050; A_lat99 −0.066; B −0.167) | What you sacrifice in raw accuracy you buy back in policy guarantees AutoFeat doesn't provide — `pattern_risk` hard-blocks PII/identifier names, `proxy_risk`/`identifier_risk` penalise (but don't ban) data-derived risky columns |
 
 In the **Graph** tab, switch the Method picker between `Join_All_BFS` and
 `AutoFeat` for `scenarioR_resource` and you'll see this visually:
-`Join_All_BFS` lights up 4 tables (base + 3 peer-service `*-resources.csv`,
-8 features); **`AutoFeat` lights up only 1 (base alone, same 4 features as
-BASE)**. The +0.433 R² lift is therefore *not* from selecting lake features —
-it's from AutoFeat's `evaluate_paths` re-running the join even with a base-
-only path, which materially shifts the temporal split's row ordering.
-`AutoFeatPlus` shows the same single-table picture but without the lift,
-making the artefact easy to spot.
+`Join_All_BFS` lights up peer-service `*-resources.csv` tables, while
+**`AutoFeat` lights up only the base table (same 4 features as BASE)**.
+The +0.433 R² lift is therefore *not* from selecting lake features. Use this
+source-table provenance check whenever a headline delta looks surprising.
 
 <!-- Time-series augmentation:
 
@@ -623,6 +679,7 @@ Bridge utility:
 | `Unable to retrieve routing information` | Neo4j routing URI against local single instance | Use `bolt://localhost:7687`; start with `docker-compose up -d neo4j` |
 | `Neo4j is already running (pid:7)` on container start | Stale `neo4j.pid` in the mounted volume after an ungraceful exit | `docker-compose down`, delete `neo4j.pid` under the data volume, then `docker-compose up -d neo4j` |
 | `streamlit: command not found` | Dashboard dependency missing | `pip install streamlit` in the active env |
+| `SchemaValidationError ... 'yOffset' was unexpected` | Stale Streamlit process serving an older dashboard, or Altair/Vega-Lite v4 rejecting a v5-only encoding | Current dashboard no longer uses `yOffset`; stop the old Streamlit process and restart `streamlit run dashboards/augmentation_dashboard.py` |
 | Darts import missing | Time-series dependency missing | `pip install "u8darts[torch]"` |
 | Slow transformer discovery | Large lake or wide tables | Use `--no-transformer-discovery` when `connections.csv` is available |
 | `AutoFeat` row reproducible but `Join_All_BFS_Filter` row missing | `dt` (string) column in the lake; AutoGluon's feature generator synthesised `dt.day` / `dt.dayofweek` that downstream indexing then couldn't find | Already guarded in `evaluation_algorithms.py`; for your own scenarios drop string-datetime columns up front (`time` integer is enough) |
