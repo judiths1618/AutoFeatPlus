@@ -58,6 +58,8 @@ scenarios:
       golang/python/amf. Every lat*/min/mean column is stripped from each lake
       table so a same-name cross-app lat95 cannot leak. The remaining question
       is honest: does cross-app resource state at matched timestamps help?
+      Latest runs show only a tiny JOIN_ALL lift; AutoFeat's mRMR selection
+      typically keeps the base-table features only under the chronological split.
     base_dir: scenarios/scenarioA_lat95
     base_table: rabbitmq-reduced.csv
     target_column: lat95
@@ -69,8 +71,8 @@ scenarios:
       - python-web-server-performance.csv
       - amf-performance.csv
     join_keys: [time]
-    # Under a like-for-like temporal split, cross-app timing telemetry gives a
-    # small but real AutoFeat lift (~+0.025 R² over BASE), not pure refusal.
+    # Under a like-for-like temporal split, exhaustive temporal joins can give a
+    # tiny lift, but AutoFeat often under-selects the joined cross-app features.
     expected_behaviour: partial
 
   - label: scenarioA_lat99
@@ -78,8 +80,8 @@ scenarios:
     purpose: >
       Same as scenarioA_lat95 but with lat99 as target. Lakes stripped of
       lat*/min/mean. BASE is already strong because lat99 is predictable from
-      own resources; any cross-app lift now comes purely from genuine shared-load
-      correlation.
+      own resources. Latest runs show only tiny JOIN_ALL/Filter lift, while
+      AutoFeat keeps base-table features and matches BASE.
     base_dir: scenarios/scenarioA_lat99
     base_table: rabbitmq-reduced.csv
     target_column: lat99
@@ -91,7 +93,7 @@ scenarios:
       - python-web-server-performance.csv
       - amf-performance.csv
     join_keys: [time]
-    # Like-for-like temporal split: small AutoFeat lift (~+0.026 R² over BASE).
+    # Like-for-like temporal split: small exhaustive-join lift, no AutoFeat lift.
     expected_behaviour: partial
 
   - label: scenarioB_amf_seg01
@@ -158,13 +160,14 @@ scenarios:
     expected_behaviour: showcase
 
   - label: scenarioR_resource
-    name: Cross-app resource contention (proxy-free positive)
+    name: Cross-app resource signal stress test (proxy-free neutral)
     purpose: >
-      Honest cross-application augmentation. Base = rabbitmq configs + workload
-      n + lat99 (own runtime stripped). Lake = (time, ram_usage, cpu_usage)
-      per peer service (golang / python / amf). No latency or workload column
-      appears in the lake, so any lift must come from genuine shared-host
-      contention — when peers peak in resource use, rabbitmq slows down.
+      Cross-application resource-signal stress test. Base = rabbitmq configs +
+      workload n + lat99 (own runtime stripped). Lake = (time, ram_usage,
+      cpu_usage) per peer service (golang / python / amf). No latency or
+      workload column appears in the lake. Under the current chronological
+      split these peer resource counters do not improve BASE; AutoFeat and
+      AutoFeatPlus should effectively refuse augmentation.
     base_dir: scenarios/scenarioR_resource
     base_table: rabbitmq-reduced.csv
     target_column: lat99
@@ -176,7 +179,7 @@ scenarios:
       - python-web-server-performance-resources.csv
       - amf-performance-resources.csv
     join_keys: [time]
-    expected_behaviour: showcase
+    expected_behaviour: refuse
 
   - label: scenarioU_unrelated
     name: Heterogeneous unrelated lake (honest negative)

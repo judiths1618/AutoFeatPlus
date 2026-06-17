@@ -134,6 +134,7 @@ def evaluate_paths(
                     target_column=bfs_result.target_column,
                     problem_type=problem_type,
                     algorithm=algorithm,
+                    time_column=bfs_result.temporal_key,
                 )
                 for result in results:
                     result.rank = 0

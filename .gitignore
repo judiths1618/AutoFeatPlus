@@ -158,7 +158,7 @@ dmypy.json
 /src/feature_discovery/**/AutogluonModels/*
 
 neo4j-data/
-paths_*.csv
+# paths_*.csv
 tfd/*
 *nohup*.out.DS_Store
 data/

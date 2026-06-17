@@ -80,13 +80,23 @@ def _parse_yaml_fallback(path: Path) -> Dict[str, dict]:
     return scenarios
 
 
-def load_run_summaries() -> pd.DataFrame:
+def load_run_summaries(scenarios: Optional[Dict[str, dict]] = None, include_unmanifested: bool = False) -> pd.DataFrame:
     """Read every `auto_pipeline_<label>_summary.csv` into one DataFrame.
     Falls back to the raw `auto_pipeline_<label>.csv` if the summary file
     doesn't exist yet (older runs)."""
+    allowed_labels = set(scenarios or {})
+
+    def _keep_label(label: str) -> bool:
+        return include_unmanifested or not allowed_labels or label in allowed_labels
+
     rows: List[pd.DataFrame] = []
     for f in sorted(RESULTS_DIR.glob("auto_pipeline_*_summary.csv")):
         df = pd.read_csv(f)
+        if "scenario" in df.columns:
+            labels = set(df["scenario"].dropna().astype(str))
+            if labels and not any(_keep_label(label) for label in labels):
+                continue
+            df = df[df["scenario"].astype(str).map(_keep_label)]
         df["__source_file"] = f.name
         rows.append(df)
 
@@ -97,6 +107,9 @@ def load_run_summaries() -> pd.DataFrame:
         if f.stem in summaries_seen or "_summary" in f.name or "_features" in f.name:
             continue
         raw = pd.read_csv(f)
+        label = str(raw["data_label"].dropna().iloc[0]) if "data_label" in raw.columns and raw["data_label"].notna().any() else ""
+        if label and not _keep_label(label):
+            continue
         keep = ["data_label", "approach", "algorithm", "accuracy",
                 "rmse", "mae", "n_features", "train_time", "total_time"]
         sub = (
@@ -121,6 +134,30 @@ def compute_lift(df: pd.DataFrame) -> pd.DataFrame:
     return df.merge(base, on=["scenario", "algorithm"], how="left").assign(
         delta_vs_base=lambda x: (x.accuracy - x.base_accuracy).round(4)
     )
+
+
+def _markdown_table(df: pd.DataFrame) -> str:
+    """Render a markdown table without requiring pandas' optional tabulate dep."""
+    rendered = df.reset_index()
+    columns = [str(c) for c in rendered.columns]
+    rows = []
+    for _, row in rendered.iterrows():
+        values = []
+        for value in row.tolist():
+            if pd.isna(value):
+                values.append("nan")
+            elif isinstance(value, float):
+                values.append(f"{value:.4f}".rstrip("0").rstrip("."))
+            else:
+                values.append(str(value))
+        rows.append(values)
+
+    lines = [
+        "| " + " | ".join(columns) + " |",
+        "| " + " | ".join("---" for _ in columns) + " |",
+    ]
+    lines.extend("| " + " | ".join(row) + " |" for row in rows)
+    return "\n".join(lines)
 
 
 def write_markdown(df: pd.DataFrame, scenarios: Dict[str, dict],
@@ -152,7 +189,10 @@ def write_markdown(df: pd.DataFrame, scenarios: Dict[str, dict],
             if "AutoFeatPlus" in pivot.columns:
                 pivot["Δ AutoFeatPlus−BASE"] = (pivot["AutoFeatPlus"] - pivot["BASE"]).round(4)
         sections.append(f"\n## Algorithm: `{alg}`\n")
-        sections.append(pivot.to_markdown())
+        try:
+            sections.append(pivot.to_markdown())
+        except ImportError:
+            sections.append(_markdown_table(pivot))
 
     # Scenario context
     sections.append("\n\n## Scenario context\n")
@@ -170,7 +210,7 @@ def write_markdown(df: pd.DataFrame, scenarios: Dict[str, dict],
 
 def main(args: argparse.Namespace) -> None:
     scenarios = load_scenarios()
-    df = load_run_summaries()
+    df = load_run_summaries(scenarios, include_unmanifested=args.include_unmanifested)
     if df.empty:
         print("No auto_pipeline result files found in", RESULTS_DIR)
         return
@@ -205,4 +245,6 @@ if __name__ == "__main__":
                         help="Filter to a single algorithm (e.g. XGB).")
     parser.add_argument("--markdown-only", action="store_true",
                         help="Write SUMMARY.md only; skip summary.csv.")
+    parser.add_argument("--include-unmanifested", action="store_true",
+                        help="Include ad hoc labels not listed in scenarios/scenarios.yaml.")
     main(parser.parse_args())
